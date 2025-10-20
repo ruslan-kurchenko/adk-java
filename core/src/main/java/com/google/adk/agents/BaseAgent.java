@@ -28,6 +28,7 @@ import com.google.errorprone.annotations.DoNotCall;
 import com.google.genai.types.Content;
 import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.api.trace.Tracer;
+import io.opentelemetry.context.Context;
 import io.opentelemetry.context.Scope;
 import io.reactivex.rxjava3.core.Flowable;
 import io.reactivex.rxjava3.core.Maybe;
@@ -205,8 +206,13 @@ public abstract class BaseAgent {
     Tracer tracer = Telemetry.getTracer();
     return Flowable.defer(
         () -> {
-          Span span = tracer.spanBuilder("agent_run [" + name() + "]").startSpan();
-          try (Scope scope = span.makeCurrent()) {
+          Span span =
+              tracer
+                  .spanBuilder("agent_run [" + name() + "]")
+                  .setParent(Context.current())
+                  .startSpan();
+          Context spanContext = Context.current().with(span);
+          try (Scope scope = spanContext.makeCurrent()) {
             InvocationContext invocationContext = createInvocationContext(parentContext);
 
             Flowable<Event> executionFlowable =
@@ -223,16 +229,24 @@ public abstract class BaseAgent {
 
                           Flowable<Event> beforeEvents = Flowable.fromOptional(beforeEventOpt);
                           Flowable<Event> mainEvents =
-                              Flowable.defer(() -> runAsyncImpl(invocationContext));
+                              Flowable.defer(
+                                  () -> {
+                                    try (Scope deferredScope = spanContext.makeCurrent()) {
+                                      return runAsyncImpl(invocationContext);
+                                    }
+                                  });
                           Flowable<Event> afterEvents =
                               Flowable.defer(
-                                  () ->
-                                      callCallback(
+                                  () -> {
+                                    try (Scope deferredScope = spanContext.makeCurrent()) {
+                                      return callCallback(
                                               afterCallbacksToFunctions(
                                                   invocationContext.pluginManager(),
                                                   afterAgentCallback.orElse(ImmutableList.of())),
                                               invocationContext)
-                                          .flatMapPublisher(Flowable::fromOptional));
+                                          .flatMapPublisher(Flowable::fromOptional);
+                                    }
+                                  });
 
                           return Flowable.concat(beforeEvents, mainEvents, afterEvents);
                         });
@@ -340,8 +354,13 @@ public abstract class BaseAgent {
     Tracer tracer = Telemetry.getTracer();
     return Flowable.defer(
         () -> {
-          Span span = tracer.spanBuilder("agent_run [" + name() + "]").startSpan();
-          try (Scope scope = span.makeCurrent()) {
+          Span span =
+              tracer
+                  .spanBuilder("agent_run [" + name() + "]")
+                  .setParent(Context.current())
+                  .startSpan();
+          Context spanContext = Context.current().with(span);
+          try (Scope scope = spanContext.makeCurrent()) {
             InvocationContext invocationContext = createInvocationContext(parentContext);
             Flowable<Event> executionFlowable = runLiveImpl(invocationContext);
             return executionFlowable.doFinally(span::end);
