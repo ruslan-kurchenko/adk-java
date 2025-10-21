@@ -270,8 +270,9 @@ public class Runner {
 
       Flowable<Event> events =
           Flowable.defer(
-              () ->
-                  this.pluginManager
+              () -> {
+                try (Scope deferredScope = spanContext.makeCurrent()) {
+                  return this.pluginManager
                       .runOnUserMessageCallback(initialContext, newMessage)
                       .switchIfEmpty(Single.just(newMessage))
                       .flatMap(
@@ -358,7 +359,9 @@ public class Runner {
                                                       pluginManager.runAfterRunCallback(
                                                           contextWithUpdatedSession)));
                                     });
-                          }));
+                          });
+                }
+              });
 
       return events
           .doOnError(
