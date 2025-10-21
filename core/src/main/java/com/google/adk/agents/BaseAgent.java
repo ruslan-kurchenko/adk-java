@@ -212,46 +212,42 @@ public abstract class BaseAgent {
                   .setParent(Context.current())
                   .startSpan();
           Context spanContext = Context.current().with(span);
-          try (Scope scope = spanContext.makeCurrent()) {
-            InvocationContext invocationContext = createInvocationContext(parentContext);
+          Scope scope = spanContext.makeCurrent();
 
-            Flowable<Event> executionFlowable =
-                callCallback(
-                        beforeCallbacksToFunctions(
-                            invocationContext.pluginManager(),
-                            beforeAgentCallback.orElse(ImmutableList.of())),
-                        invocationContext)
-                    .flatMapPublisher(
-                        beforeEventOpt -> {
-                          if (invocationContext.endInvocation()) {
-                            return Flowable.fromOptional(beforeEventOpt);
-                          }
+          InvocationContext invocationContext = createInvocationContext(parentContext);
 
-                          Flowable<Event> beforeEvents = Flowable.fromOptional(beforeEventOpt);
-                          Flowable<Event> mainEvents =
-                              Flowable.defer(
-                                  () -> {
-                                    try (Scope deferredScope = spanContext.makeCurrent()) {
-                                      return runAsyncImpl(invocationContext);
-                                    }
-                                  });
-                          Flowable<Event> afterEvents =
-                              Flowable.defer(
-                                  () -> {
-                                    try (Scope deferredScope = spanContext.makeCurrent()) {
-                                      return callCallback(
-                                              afterCallbacksToFunctions(
-                                                  invocationContext.pluginManager(),
-                                                  afterAgentCallback.orElse(ImmutableList.of())),
-                                              invocationContext)
-                                          .flatMapPublisher(Flowable::fromOptional);
-                                    }
-                                  });
+          Flowable<Event> executionFlowable =
+              callCallback(
+                      beforeCallbacksToFunctions(
+                          invocationContext.pluginManager(),
+                          beforeAgentCallback.orElse(ImmutableList.of())),
+                      invocationContext)
+                  .flatMapPublisher(
+                      beforeEventOpt -> {
+                        if (invocationContext.endInvocation()) {
+                          return Flowable.fromOptional(beforeEventOpt);
+                        }
 
-                          return Flowable.concat(beforeEvents, mainEvents, afterEvents);
-                        });
-            return executionFlowable.doFinally(span::end);
-          }
+                        Flowable<Event> beforeEvents = Flowable.fromOptional(beforeEventOpt);
+                        Flowable<Event> mainEvents =
+                            Flowable.defer(() -> runAsyncImpl(invocationContext));
+                        Flowable<Event> afterEvents =
+                            Flowable.defer(
+                                () ->
+                                    callCallback(
+                                            afterCallbacksToFunctions(
+                                                invocationContext.pluginManager(),
+                                                afterAgentCallback.orElse(ImmutableList.of())),
+                                            invocationContext)
+                                        .flatMapPublisher(Flowable::fromOptional));
+
+                        return Flowable.concat(beforeEvents, mainEvents, afterEvents);
+                      });
+          return executionFlowable.doFinally(
+              () -> {
+                scope.close();
+                span.end();
+              });
         });
   }
 
@@ -360,11 +356,15 @@ public abstract class BaseAgent {
                   .setParent(Context.current())
                   .startSpan();
           Context spanContext = Context.current().with(span);
-          try (Scope scope = spanContext.makeCurrent()) {
-            InvocationContext invocationContext = createInvocationContext(parentContext);
-            Flowable<Event> executionFlowable = runLiveImpl(invocationContext);
-            return executionFlowable.doFinally(span::end);
-          }
+          Scope scope = spanContext.makeCurrent();
+
+          InvocationContext invocationContext = createInvocationContext(parentContext);
+          Flowable<Event> executionFlowable = runLiveImpl(invocationContext);
+          return executionFlowable.doFinally(
+              () -> {
+                scope.close();
+                span.end();
+              });
         });
   }
 

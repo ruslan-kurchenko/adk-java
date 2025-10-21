@@ -255,7 +255,11 @@ public class Runner {
     Span span =
         Telemetry.getTracer().spanBuilder("invocation").setParent(Context.current()).startSpan();
     Context spanContext = Context.current().with(span);
-    try (Scope unusedScope = spanContext.makeCurrent()) {
+
+    // Open scope for entire Flowable lifecycle (closed in doFinally)
+    Scope scope = spanContext.makeCurrent();
+
+    try {
       BaseAgent rootAgent = this.agent;
       String invocationId = InvocationContext.newInvocationContextId();
 
@@ -270,9 +274,8 @@ public class Runner {
 
       Flowable<Event> events =
           Flowable.defer(
-              () -> {
-                try (Scope deferredScope = spanContext.makeCurrent()) {
-                  return this.pluginManager
+              () ->
+                  this.pluginManager
                       .runOnUserMessageCallback(initialContext, newMessage)
                       .switchIfEmpty(Single.just(newMessage))
                       .flatMap(
@@ -359,9 +362,7 @@ public class Runner {
                                                       pluginManager.runAfterRunCallback(
                                                           contextWithUpdatedSession)));
                                     });
-                          });
-                }
-              });
+                          }));
 
       return events
           .doOnError(
@@ -369,7 +370,11 @@ public class Runner {
                 span.setStatus(StatusCode.ERROR, "Error in runAsync Flowable execution");
                 span.recordException(throwable);
               })
-          .doFinally(span::end);
+          .doFinally(
+              () -> {
+                scope.close();
+                span.end();
+              });
     } catch (Throwable t) {
       span.setStatus(StatusCode.ERROR, "Error during runAsync synchronous setup");
       span.recordException(t);
@@ -481,7 +486,9 @@ public class Runner {
     Span span =
         Telemetry.getTracer().spanBuilder("invocation").setParent(Context.current()).startSpan();
     Context spanContext = Context.current().with(span);
-    try (Scope scope = spanContext.makeCurrent()) {
+    Scope scope = spanContext.makeCurrent();
+
+    try {
       InvocationContext invocationContext =
           newInvocationContextForLive(session, Optional.of(liveRequestQueue), runConfig);
       if (invocationContext.agent() instanceof LlmAgent) {
@@ -507,7 +514,11 @@ public class Runner {
                 span.setStatus(StatusCode.ERROR, "Error in runLive Flowable execution");
                 span.recordException(throwable);
               })
-          .doFinally(span::end);
+          .doFinally(
+              () -> {
+                scope.close();
+                span.end();
+              });
     } catch (Throwable t) {
       span.setStatus(StatusCode.ERROR, "Error during runLive synchronous setup");
       span.recordException(t);
