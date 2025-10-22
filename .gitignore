@@ -29,3 +29,9 @@ out/
 # OS-specific junk
 .DS_Store
 Thumbs.db
+
+# Eclipse files
+**/org.eclipse.*
+**/.project
+**/.classpath
+**/.factorypath
