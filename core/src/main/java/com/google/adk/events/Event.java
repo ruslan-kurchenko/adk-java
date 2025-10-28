@@ -23,6 +23,7 @@ import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 import com.google.adk.JsonBaseModel;
+import com.google.adk.models.cache.CacheMetadata;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Iterables;
 import com.google.errorprone.annotations.CanIgnoreReturnValue;
@@ -62,6 +63,7 @@ public class Event extends JsonBaseModel {
   private Optional<String> branch = Optional.empty();
   private Optional<GroundingMetadata> groundingMetadata = Optional.empty();
   private Optional<String> modelVersion = Optional.empty();
+  private Optional<CacheMetadata> cacheMetadata = Optional.empty();
   private long timestamp;
 
   private Event() {}
@@ -252,6 +254,16 @@ public class Event extends JsonBaseModel {
     this.modelVersion = modelVersion;
   }
 
+  /** The cache metadata for this event. */
+  @JsonProperty("cacheMetadata")
+  public Optional<CacheMetadata> cacheMetadata() {
+    return cacheMetadata;
+  }
+
+  public void setCacheMetadata(Optional<CacheMetadata> cacheMetadata) {
+    this.cacheMetadata = cacheMetadata;
+  }
+
   /** The timestamp of the event. */
   @JsonProperty("timestamp")
   public long timestamp() {
@@ -348,6 +360,7 @@ public class Event extends JsonBaseModel {
     private Optional<String> branch = Optional.empty();
     private Optional<GroundingMetadata> groundingMetadata = Optional.empty();
     private Optional<String> modelVersion = Optional.empty();
+    private Optional<CacheMetadata> cacheMetadata = Optional.empty();
     private Optional<Long> timestamp = Optional.empty();
 
     @JsonCreator
@@ -587,6 +600,23 @@ public class Event extends JsonBaseModel {
       return modelVersion;
     }
 
+    @CanIgnoreReturnValue
+    @JsonProperty("cacheMetadata")
+    public Builder cacheMetadata(@Nullable CacheMetadata value) {
+      this.cacheMetadata = Optional.ofNullable(value);
+      return this;
+    }
+
+    @CanIgnoreReturnValue
+    public Builder cacheMetadata(Optional<CacheMetadata> value) {
+      this.cacheMetadata = value;
+      return this;
+    }
+
+    Optional<CacheMetadata> cacheMetadata() {
+      return cacheMetadata;
+    }
+
     public Event build() {
       Event event = new Event();
       event.setId(id);
@@ -605,6 +635,7 @@ public class Event extends JsonBaseModel {
       event.branch(branch);
       event.setGroundingMetadata(groundingMetadata);
       event.setModelVersion(modelVersion);
+      event.setCacheMetadata(cacheMetadata);
       event.setActions(actions().orElseGet(() -> EventActions.builder().build()));
       event.setTimestamp(timestamp().orElseGet(() -> Instant.now().toEpochMilli()));
       return event;
@@ -640,7 +671,8 @@ public class Event extends JsonBaseModel {
             .interrupted(this.interrupted)
             .branch(this.branch)
             .groundingMetadata(this.groundingMetadata)
-            .modelVersion(this.modelVersion);
+            .modelVersion(this.modelVersion)
+            .cacheMetadata(this.cacheMetadata);
     if (this.timestamp != 0) {
       builder.timestamp(this.timestamp);
     }
@@ -672,7 +704,8 @@ public class Event extends JsonBaseModel {
         && Objects.equals(interrupted, other.interrupted)
         && Objects.equals(branch, other.branch)
         && Objects.equals(groundingMetadata, other.groundingMetadata)
-        && Objects.equals(modelVersion, other.modelVersion);
+        && Objects.equals(modelVersion, other.modelVersion)
+        && Objects.equals(cacheMetadata, other.cacheMetadata);
   }
 
   @Override
@@ -700,6 +733,7 @@ public class Event extends JsonBaseModel {
         branch,
         groundingMetadata,
         modelVersion,
+        cacheMetadata,
         timestamp);
   }
 }

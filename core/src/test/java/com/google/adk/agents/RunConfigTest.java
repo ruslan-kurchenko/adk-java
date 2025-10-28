@@ -18,10 +18,12 @@ package com.google.adk.agents;
 
 import static com.google.common.truth.Truth.assertThat;
 
+import com.google.adk.apps.ContextCacheConfig;
 import com.google.common.collect.ImmutableList;
 import com.google.genai.types.AudioTranscriptionConfig;
 import com.google.genai.types.Modality;
 import com.google.genai.types.SpeechConfig;
+import java.util.Optional;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.JUnit4;
@@ -65,6 +67,55 @@ public final class RunConfigTest {
     assertThat(runConfig.outputAudioTranscription()).isNull();
     assertThat(runConfig.inputAudioTranscription()).isNull();
     assertThat(runConfig.maxLlmCalls()).isEqualTo(500);
+    assertThat(runConfig.contextCacheConfig()).isEmpty();
+  }
+
+  @Test
+  public void contextCacheConfig_setWithOptional_retrievesCorrectly() {
+    ContextCacheConfig cacheConfig =
+        ContextCacheConfig.builder().ttlSeconds(3600).minTokens(1000).build();
+
+    RunConfig runConfig =
+        RunConfig.builder().setContextCacheConfig(Optional.of(cacheConfig)).build();
+
+    assertThat(runConfig.contextCacheConfig()).hasValue(cacheConfig);
+  }
+
+  @Test
+  public void contextCacheConfig_setWithNullable_retrievesCorrectly() {
+    ContextCacheConfig cacheConfig = ContextCacheConfig.builder().ttlSeconds(1800).build();
+
+    RunConfig runConfig = RunConfig.builder().setContextCacheConfig(cacheConfig).build();
+
+    assertThat(runConfig.contextCacheConfig()).hasValue(cacheConfig);
+  }
+
+  @Test
+  public void contextCacheConfig_setToNull_returnsEmpty() {
+    RunConfig runConfig =
+        RunConfig.builder().setContextCacheConfig((ContextCacheConfig) null).build();
+
+    assertThat(runConfig.contextCacheConfig()).isEmpty();
+  }
+
+  @Test
+  public void contextCacheConfig_notSet_returnsEmpty() {
+    RunConfig runConfig = RunConfig.builder().build();
+
+    assertThat(runConfig.contextCacheConfig()).isEmpty();
+  }
+
+  @Test
+  public void builder_fromExistingRunConfig_preservesContextCacheConfig() {
+    ContextCacheConfig cacheConfig = ContextCacheConfig.builder().ttlSeconds(7200).build();
+
+    RunConfig original =
+        RunConfig.builder().setContextCacheConfig(cacheConfig).setMaxLlmCalls(100).build();
+
+    RunConfig rebuilt = RunConfig.builder(original).setMaxLlmCalls(200).build();
+
+    assertThat(rebuilt.contextCacheConfig()).hasValue(cacheConfig);
+    assertThat(rebuilt.maxLlmCalls()).isEqualTo(200);
   }
 
   @Test
