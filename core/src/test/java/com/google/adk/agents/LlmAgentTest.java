@@ -303,4 +303,83 @@ public final class LlmAgentTest {
     assertThat(resolvedModel.modelName()).hasValue(modelName);
     assertThat(resolvedModel.model()).hasValue(testLlm);
   }
+
+  @Test
+  public void staticInstruction_notSet_returnsEmpty() {
+    LlmAgent agent = createTestAgentBuilder(createTestLlm(LlmResponse.builder().build())).build();
+
+    assertThat(agent.staticInstruction()).isEmpty();
+  }
+
+  @Test
+  public void staticInstruction_setWithString_retrievesCorrectly() {
+    String staticInstr = "You are a HIPAA-compliant healthcare assistant.";
+    LlmAgent agent =
+        createTestAgentBuilder(createTestLlm(LlmResponse.builder().build()))
+            .staticInstruction(staticInstr)
+            .build();
+
+    assertThat(agent.staticInstruction()).isPresent();
+    assertThat(agent.staticInstruction().get()).isInstanceOf(Instruction.Static.class);
+  }
+
+  @Test
+  public void staticInstruction_setWithNull_returnsEmpty() {
+    LlmAgent agent =
+        createTestAgentBuilder(createTestLlm(LlmResponse.builder().build()))
+            .staticInstruction((String) null)
+            .build();
+
+    assertThat(agent.staticInstruction()).isEmpty();
+  }
+
+  @Test
+  public void canonicalStaticInstruction_withStaticString_returnsInstruction() {
+    String staticInstr = "Static cacheable instruction content";
+    LlmAgent agent =
+        createTestAgentBuilder(createTestLlm(LlmResponse.builder().build()))
+            .staticInstruction(staticInstr)
+            .build();
+    ReadonlyContext context = new ReadonlyContext(createInvocationContext(agent));
+
+    String canonical = agent.canonicalStaticInstruction(context).blockingGet().getKey();
+
+    assertThat(canonical).isEqualTo(staticInstr);
+  }
+
+  @Test
+  public void canonicalStaticInstruction_withProvider_injectsContext() {
+    String prefix = "Static instruction for invocation: ";
+    LlmAgent agent =
+        createTestAgentBuilder(createTestLlm(LlmResponse.builder().build()))
+            .staticInstruction(
+                new Instruction.Provider(context -> Single.just(prefix + context.invocationId())))
+            .build();
+    ReadonlyContext context = new ReadonlyContext(createInvocationContext(agent));
+
+    String canonical = agent.canonicalStaticInstruction(context).blockingGet().getKey();
+
+    assertThat(canonical).isEqualTo(prefix + context.invocationId());
+  }
+
+  @Test
+  public void canonicalStaticInstruction_notSet_returnsEmptyString() {
+    LlmAgent agent = createTestAgentBuilder(createTestLlm(LlmResponse.builder().build())).build();
+    ReadonlyContext context = new ReadonlyContext(createInvocationContext(agent));
+
+    String canonical = agent.canonicalStaticInstruction(context).blockingGet().getKey();
+
+    assertThat(canonical).isEmpty();
+  }
+
+  @Test
+  public void staticInstruction_setWithInstructionObject_retrievesCorrectly() {
+    Instruction staticInstr = new Instruction.Static("Cacheable content");
+    LlmAgent agent =
+        createTestAgentBuilder(createTestLlm(LlmResponse.builder().build()))
+            .staticInstruction(staticInstr)
+            .build();
+
+    assertThat(agent.staticInstruction()).hasValue(staticInstr);
+  }
 }

@@ -140,6 +140,11 @@ public abstract class BaseLlmFlow implements BaseFlow {
       LlmRequest llmRequest,
       LlmResponse llmResponse) {
 
+    // Transfer cache metadata from request to response if present
+    if (llmRequest.cacheMetadata().isPresent() && llmResponse.cacheMetadata().isEmpty()) {
+      llmResponse = llmResponse.toBuilder().cacheMetadata(llmRequest.cacheMetadata().get()).build();
+    }
+
     List<Iterable<Event>> eventIterables = new ArrayList<>();
     Single<LlmResponse> currentLlmResponse = Single.just(llmResponse);
     for (ResponseProcessor processor : responseProcessors) {
@@ -169,6 +174,8 @@ public abstract class BaseLlmFlow implements BaseFlow {
           Event modelResponseEvent =
               buildModelResponseEvent(baseEventForLlmResponse, llmRequest, updatedResponse);
 
+          recordCachedTokensSaved(context, updatedResponse);
+
           Flowable<Event> modelEventStream = Flowable.just(modelResponseEvent);
 
           if (modelResponseEvent.functionCalls().isEmpty()) {
@@ -186,6 +193,22 @@ public abstract class BaseLlmFlow implements BaseFlow {
 
           return processorEvents.concatWith(modelEventStream).concatWith(maybeFunctionCallEvent);
         });
+  }
+
+  private static void recordCachedTokensSaved(
+      InvocationContext context, LlmResponse updatedResponse) {
+    if (updatedResponse.usageMetadata().isPresent()) {
+      updatedResponse
+          .usageMetadata()
+          .get()
+          .cachedContentTokenCount()
+          .ifPresent(
+              tokenCount -> {
+                if (tokenCount > 0) {
+                  Telemetry.recordCachedTokensSaved(context.agent().name(), tokenCount);
+                }
+              });
+    }
   }
 
   /**
@@ -633,7 +656,9 @@ public abstract class BaseLlmFlow implements BaseFlow {
             .errorMessage(llmResponse.errorMessage())
             .interrupted(llmResponse.interrupted())
             .turnComplete(llmResponse.turnComplete())
-            .groundingMetadata(llmResponse.groundingMetadata());
+            .groundingMetadata(llmResponse.groundingMetadata())
+            .cacheMetadata(llmResponse.cacheMetadata())
+            .usageMetadata(llmResponse.usageMetadata());
 
     Event event = eventBuilder.build();
 
