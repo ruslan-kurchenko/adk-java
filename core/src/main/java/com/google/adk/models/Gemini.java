@@ -19,6 +19,7 @@ package com.google.adk.models;
 import static com.google.common.base.StandardSystemProperty.JAVA_VERSION;
 
 import com.google.adk.Version;
+import com.google.adk.models.cache.CacheMetadata;
 import com.google.common.collect.ImmutableMap;
 import com.google.errorprone.annotations.CanIgnoreReturnValue;
 import com.google.genai.Client;
@@ -208,6 +209,10 @@ public class Gemini extends BaseLlm {
   public Flowable<LlmResponse> generateContent(LlmRequest llmRequest, boolean stream) {
     llmRequest = GeminiUtil.prepareGenenerateContentRequest(llmRequest, !apiClient.vertexAI());
     GenerateContentConfig config = llmRequest.config().orElse(null);
+
+    // Inject cached content ID if cache is active
+    config = injectCachedContentId(llmRequest, config);
+
     String effectiveModelName = llmRequest.model().orElse(model());
 
     logger.trace("Request Contents: {}", llmRequest.contents());
@@ -296,6 +301,48 @@ public class Gemini extends BaseLlm {
         .build();
   }
 
+  /**
+   * Injects cached content ID into GenerateContentConfig if cache is active.
+   *
+   * <p>When cache metadata indicates an active cache, this method:
+   *
+   * <ul>
+   *   <li>Extracts the cache name (e.g., "cachedContents/abc123")
+   *   <li>Injects it into config.cachedContent field
+   *   <li>Removes systemInstruction (already in cache, Gemini rejects both)
+   * </ul>
+   *
+   * @param llmRequest Request that may contain cache metadata
+   * @param config Current GenerateContentConfig (may be null)
+   * @return Updated config with cachedContent field if applicable
+   */
+  private GenerateContentConfig injectCachedContentId(
+      LlmRequest llmRequest, GenerateContentConfig config) {
+
+    return llmRequest
+        .cacheMetadata()
+        .filter(CacheMetadata::isActiveCache)
+        .flatMap(CacheMetadata::cacheName)
+        .map(
+            cacheName -> {
+              logger.debug("Injecting cached content: {}", cacheName);
+
+              GenerateContentConfig.Builder configBuilder =
+                  config != null ? config.toBuilder() : GenerateContentConfig.builder();
+
+              configBuilder.cachedContent(cacheName);
+
+              // Remove systemInstruction - it's already in the cache
+              // Gemini API rejects requests with both cachedContent and systemInstruction
+              configBuilder.systemInstruction((Content) null);
+
+              logger.debug("Removed systemInstruction from config (already in cache)");
+
+              return configBuilder.build();
+            })
+        .orElse(config);
+  }
+
   @Override
   public BaseLlmConnection connect(LlmRequest llmRequest) {
     if (!apiClient.vertexAI()) {
@@ -303,6 +350,16 @@ public class Gemini extends BaseLlm {
     }
     logger.debug("Establishing Gemini connection.");
     LiveConnectConfig liveConnectConfig = llmRequest.liveConnectConfig();
+
+    // TODO: Inject cached content into LiveConnectConfig when SDK supports it
+    // Currently LiveConnectConfig.Builder does not have cachedContent() method
+    if (llmRequest.cacheMetadata().isPresent()
+        && llmRequest.cacheMetadata().get().isActiveCache()) {
+      logger.warn(
+          "Context caching is not yet supported for Live mode (runLive). "
+              + "Cache will be ignored for this connection. Use runAsync for cached requests.");
+    }
+
     String effectiveModelName = llmRequest.model().orElse(model());
 
     logger.debug("Connecting to model {}", effectiveModelName);
