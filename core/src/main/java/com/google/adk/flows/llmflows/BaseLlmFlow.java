@@ -140,6 +140,11 @@ public abstract class BaseLlmFlow implements BaseFlow {
       LlmRequest llmRequest,
       LlmResponse llmResponse) {
 
+    // Transfer cache metadata from request to response
+    if (llmRequest.cacheMetadata().isPresent() && llmResponse.cacheMetadata().isEmpty()) {
+      llmResponse = llmResponse.toBuilder().cacheMetadata(llmRequest.cacheMetadata()).build();
+    }
+
     List<Iterable<Event>> eventIterables = new ArrayList<>();
     Single<LlmResponse> currentLlmResponse = Single.just(llmResponse);
     for (ResponseProcessor processor : responseProcessors) {
@@ -168,6 +173,21 @@ public abstract class BaseLlmFlow implements BaseFlow {
 
           Event modelResponseEvent =
               buildModelResponseEvent(baseEventForLlmResponse, llmRequest, updatedResponse);
+
+          // Record cached tokens saved metric
+          if (updatedResponse.usageMetadata().isPresent()) {
+            updatedResponse
+                .usageMetadata()
+                .get()
+                .cachedContentTokenCount()
+                .ifPresent(
+                    tokenCount -> {
+                      if (tokenCount > 0) {
+                        com.google.adk.Telemetry.recordCachedTokensSaved(
+                            context.agent().name(), tokenCount);
+                      }
+                    });
+          }
 
           Flowable<Event> modelEventStream = Flowable.just(modelResponseEvent);
 
@@ -633,7 +653,9 @@ public abstract class BaseLlmFlow implements BaseFlow {
             .errorMessage(llmResponse.errorMessage())
             .interrupted(llmResponse.interrupted())
             .turnComplete(llmResponse.turnComplete())
-            .groundingMetadata(llmResponse.groundingMetadata());
+            .groundingMetadata(llmResponse.groundingMetadata())
+            .cacheMetadata(llmResponse.cacheMetadata())
+            .usageMetadata(llmResponse.usageMetadata());
 
     Event event = eventBuilder.build();
 
