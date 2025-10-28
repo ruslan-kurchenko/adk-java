@@ -140,6 +140,11 @@ public abstract class BaseLlmFlow implements BaseFlow {
       LlmRequest llmRequest,
       LlmResponse llmResponse) {
 
+    // Transfer cache metadata from request to response if present
+    if (llmRequest.cacheMetadata().isPresent() && llmResponse.cacheMetadata().isEmpty()) {
+      llmResponse = llmResponse.toBuilder().cacheMetadata(llmRequest.cacheMetadata().get()).build();
+    }
+
     List<Iterable<Event>> eventIterables = new ArrayList<>();
     Single<LlmResponse> currentLlmResponse = Single.just(llmResponse);
     for (ResponseProcessor processor : responseProcessors) {
@@ -159,6 +164,22 @@ public abstract class BaseLlmFlow implements BaseFlow {
         updatedResponse ->
             buildPostprocessingEvents(
                 updatedResponse, eventIterables, context, baseEventForLlmResponse, llmRequest));
+  }
+
+  private static void recordCachedTokensSaved(
+      InvocationContext context, LlmResponse updatedResponse) {
+    if (updatedResponse.usageMetadata().isPresent()) {
+      updatedResponse
+          .usageMetadata()
+          .get()
+          .cachedContentTokenCount()
+          .ifPresent(
+              tokenCount -> {
+                if (tokenCount > 0) {
+                  Telemetry.recordCachedTokensSaved(context.agent().name(), tokenCount);
+                }
+              });
+    }
   }
 
   /**
@@ -619,6 +640,8 @@ public abstract class BaseLlmFlow implements BaseFlow {
       return processorEvents.concatWith(Flowable.just(modelResponseEvent));
     }
 
+    recordCachedTokensSaved(context, updatedResponse);
+
     Maybe<Event> maybeFunctionResponseEvent =
         context.runConfig().streamingMode() == StreamingMode.BIDI
             ? Functions.handleFunctionCallsLive(context, modelResponseEvent, llmRequest.tools())
@@ -649,6 +672,7 @@ public abstract class BaseLlmFlow implements BaseFlow {
             .interrupted(llmResponse.interrupted())
             .turnComplete(llmResponse.turnComplete())
             .groundingMetadata(llmResponse.groundingMetadata())
+            .cacheMetadata(llmResponse.cacheMetadata())
             .avgLogprobs(llmResponse.avgLogprobs())
             .finishReason(llmResponse.finishReason())
             .usageMetadata(llmResponse.usageMetadata())

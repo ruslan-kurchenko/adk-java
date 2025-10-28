@@ -19,6 +19,8 @@ package com.google.adk.models;
 import static com.google.common.base.StandardSystemProperty.JAVA_VERSION;
 
 import com.google.adk.Version;
+import com.google.adk.models.cache.CacheMetadata;
+import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.errorprone.annotations.CanIgnoreReturnValue;
 import com.google.genai.Client;
@@ -37,6 +39,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -211,6 +214,40 @@ public class Gemini extends BaseLlm {
         GeminiUtil.prepareGenenerateContentRequest(
             llmRequest, !apiClient.vertexAI(), /* stripThoughts= */ false);
     GenerateContentConfig config = llmRequest.config().orElse(null);
+
+    // Inject cached content ID if cache is active
+    config = injectCachedContentId(llmRequest, config);
+
+    // Remove cached contents from request (matches Python implementation)
+    // Python: llm_request.contents = llm_request.contents[cache_contents_count
+    if (llmRequest.cacheMetadata().isPresent()
+        && llmRequest.cacheMetadata().get().isActiveCache()) {
+
+      int cachedCount = llmRequest.cacheMetadata().get().contentsCount();
+      List<Content> allContents = llmRequest.contents();
+
+      logger.info("Contents removal in Gemini.generateContent():");
+      logger.info("  - cachedCount: {}", cachedCount);
+      logger.info("  - allContents.size(): {}", allContents.size());
+
+      if (cachedCount > 0 && allContents.size() > cachedCount) {
+        List<Content> uncachedContents = allContents.subList(cachedCount, allContents.size());
+        llmRequest = llmRequest.toBuilder().contents(uncachedContents).build();
+        logger.info(
+            "Removed {} cached contents, sending {} uncached contents to Gemini",
+            cachedCount,
+            uncachedContents.size());
+      } else if (cachedCount > 0 && allContents.size() == cachedCount) {
+        llmRequest = llmRequest.toBuilder().contents(ImmutableList.of()).build();
+        logger.info("All {} contents cached, sending empty contents list", cachedCount);
+      } else if (allContents.size() < cachedCount) {
+        logger.warn(
+            "Request has fewer contents ({}) than cached ({}), sending all contents",
+            allContents.size(),
+            cachedCount);
+      }
+    }
+
     String effectiveModelName = llmRequest.model().orElse(model());
 
     logger.trace("Request Contents: {}", llmRequest.contents());
@@ -343,6 +380,99 @@ public class Gemini extends BaseLlm {
         .build();
   }
 
+  /**
+   * Injects cached content ID into GenerateContentConfig if cache is active.
+   *
+   * <p>When cache metadata indicates an active cache, builds a fresh config with cachedContent
+   * reference and all original settings EXCEPT systemInstruction (already in the cache).
+   *
+   * @param llmRequest Request that may contain cache metadata
+   * @param config Current GenerateContentConfig (may be null)
+   * @return Updated config with cachedContent field if applicable
+   */
+  private GenerateContentConfig injectCachedContentId(
+      LlmRequest llmRequest, GenerateContentConfig config) {
+
+    return llmRequest
+        .cacheMetadata()
+        .filter(CacheMetadata::isActiveCache)
+        .flatMap(CacheMetadata::cacheName)
+        .map(cacheName -> buildConfigWithCachedContent(cacheName, config))
+        .orElse(config);
+  }
+
+  /**
+   * Builds GenerateContentConfig for cached content requests.
+   *
+   * <p>Creates a fresh config with cachedContent reference and copies all settings from original
+   * config EXCEPT systemInstruction (which is already in the cache).
+   *
+   * <p>Gemini API rejects requests with both cachedContent and systemInstruction, so
+   * systemInstruction is explicitly excluded.
+   *
+   * @param cacheName The cache resource name to reference
+   * @param originalConfig Original config to copy settings from (may be null)
+   * @return New config with cached content
+   */
+  private GenerateContentConfig buildConfigWithCachedContent(
+      String cacheName, @Nullable GenerateContentConfig originalConfig) {
+
+    logger.debug("Building config with cached content: {}", cacheName);
+
+    GenerateContentConfig.Builder builder = GenerateContentConfig.builder();
+    builder.cachedContent(cacheName);
+
+    if (originalConfig != null) {
+      copyNonCachedFields(originalConfig, builder);
+    }
+
+    GenerateContentConfig builtConfig = builder.build();
+
+    logger.debug("Config built without systemInstruction (already in cache)");
+    logger.info("Cached content request config:");
+    logger.info("  - cachedContent: {}", cacheName);
+    logger.info(
+        "  - tools: {}",
+        builtConfig.tools().isPresent() ? builtConfig.tools().get().size() + " tools" : "NONE");
+    logger.info("  - toolConfig: {}", builtConfig.toolConfig().isPresent() ? "present" : "NONE");
+    logger.info(
+        "  - systemInstruction: {}",
+        builtConfig.systemInstruction().isPresent() ? "PRESENT (BUG!)" : "excluded");
+
+    return builtConfig;
+  }
+
+  /**
+   * Copies non-cached fields from original config to builder.
+   *
+   * <p>When using cached content, systemInstruction, tools, and toolConfig are already in the cache
+   * and must NOT be included in the request (matches Python ADK implementation).
+   *
+   * <p>Fields copied (response-related only):
+   *
+   * <ul>
+   *   <li>responseModalities
+   *   <li>safetySettings
+   * </ul>
+   *
+   * <p>Fields excluded (already in CachedContent):
+   *
+   * <ul>
+   *   <li>systemInstruction
+   *   <li>tools
+   *   <li>toolConfig
+   * </ul>
+   *
+   * @param original Original config to copy from
+   * @param builder Builder to copy fields to
+   */
+  private void copyNonCachedFields(
+      GenerateContentConfig original, GenerateContentConfig.Builder builder) {
+
+    original.responseModalities().ifPresent(builder::responseModalities);
+    original.safetySettings().ifPresent(builder::safetySettings);
+  }
+
   @Override
   public BaseLlmConnection connect(LlmRequest llmRequest) {
     if (!apiClient.vertexAI()) {
@@ -350,6 +480,16 @@ public class Gemini extends BaseLlm {
     }
     logger.debug("Establishing Gemini connection.");
     LiveConnectConfig liveConnectConfig = llmRequest.liveConnectConfig();
+
+    // TODO: Inject cached content into LiveConnectConfig when SDK supports it
+    // Currently LiveConnectConfig.Builder does not have cachedContent() method
+    if (llmRequest.cacheMetadata().isPresent()
+        && llmRequest.cacheMetadata().get().isActiveCache()) {
+      logger.warn(
+          "Context caching is not yet supported for Live mode (runLive). "
+              + "Cache will be ignored for this connection. Use runAsync for cached requests.");
+    }
+
     String effectiveModelName = llmRequest.model().orElse(model());
 
     logger.debug("Connecting to model {}", effectiveModelName);
