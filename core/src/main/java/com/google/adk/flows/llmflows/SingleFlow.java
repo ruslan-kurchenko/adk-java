@@ -16,7 +16,9 @@
 
 package com.google.adk.flows.llmflows;
 
+import com.google.adk.models.cache.GeminiContextCacheManager;
 import com.google.common.collect.ImmutableList;
+import com.google.genai.Client;
 import java.util.List;
 import java.util.Optional;
 
@@ -24,9 +26,27 @@ import java.util.Optional;
 public class SingleFlow extends BaseLlmFlow {
   // TODO: We should eventually remove this class since it complicates things.
 
+  // Default cache manager (will be null if caching not used)
+  private static final GeminiContextCacheManager DEFAULT_CACHE_MANAGER =
+      createDefaultCacheManager();
+
+  private static GeminiContextCacheManager createDefaultCacheManager() {
+    try {
+      // Create default client for caching API
+      Client client = Client.builder().build();
+      return new GeminiContextCacheManager(client, null);
+    } catch (Exception e) {
+      // If client creation fails, caching will be disabled
+      return null;
+    }
+  }
+
   protected static final ImmutableList<RequestProcessor> REQUEST_PROCESSORS =
       ImmutableList.of(
-          new Basic(),
+          new Basic(), // Process staticInstruction first
+          DEFAULT_CACHE_MANAGER != null
+              ? new ContextCacheProcessor(DEFAULT_CACHE_MANAGER)
+              : new NoOpRequestProcessor(),
           new Instructions(),
           new Identity(),
           new Contents(),

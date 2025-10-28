@@ -28,6 +28,10 @@ import com.google.common.collect.ImmutableList;
 import com.google.genai.types.Content;
 import com.google.genai.types.Part;
 import io.opentelemetry.api.GlobalOpenTelemetry;
+import io.opentelemetry.api.common.AttributeKey;
+import io.opentelemetry.api.common.Attributes;
+import io.opentelemetry.api.metrics.LongCounter;
+import io.opentelemetry.api.metrics.Meter;
 import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.api.trace.Tracer;
 import io.opentelemetry.context.Context;
@@ -44,21 +48,191 @@ import org.slf4j.LoggerFactory;
 /**
  * Utility class for capturing and reporting telemetry data within the ADK. This class provides
  * methods to trace various aspects of the agent's execution, including tool calls, tool responses,
- * LLM interactions, and data handling. It leverages OpenTelemetry for tracing and logging for
- * detailed information. These traces can then be exported through the ADK Dev Server UI.
+ * LLM interactions, and data handling. It leverages OpenTelemetry for tracing, metrics, and logging
+ * for detailed information. These traces and metrics can be exported to DataDog, Prometheus,
+ * Grafana, or other observability platforms via OTLP.
+ *
+ * <p>Metrics are recorded automatically during agent execution and exported via OpenTelemetry. To
+ * enable metric export, configure the OTEL_EXPORTER_OTLP_ENDPOINT environment variable to point to
+ * your collector (e.g., DataDog agent on localhost:4318).
  */
 public class Telemetry {
 
   private static final Logger log = LoggerFactory.getLogger(Telemetry.class);
+  private static final Tracer tracer = GlobalOpenTelemetry.getTracer("gcp.vertex.agent");
 
-  @SuppressWarnings("NonFinalStaticField")
-  private static Tracer tracer = GlobalOpenTelemetry.getTracer("gcp.vertex.agent");
+  // Lazy initialization of cache metrics to support testing
+  private static volatile LongCounter cacheHitsCounter;
+  private static volatile LongCounter cacheMissesCounter;
+  private static volatile LongCounter cacheCreationsCounter;
+  private static volatile LongCounter cachedTokensSavedCounter;
+
+  private static LongCounter getCacheHitsCounter() {
+    if (cacheHitsCounter == null) {
+      synchronized (Telemetry.class) {
+        if (cacheHitsCounter == null) {
+          Meter meter = GlobalOpenTelemetry.getMeter("gcp.vertex.agent");
+          cacheHitsCounter =
+              meter
+                  .counterBuilder("adk.cache.hits")
+                  .setDescription("Number of context cache hits")
+                  .setUnit("1")
+                  .build();
+        }
+      }
+    }
+    return cacheHitsCounter;
+  }
+
+  private static LongCounter getCacheMissesCounter() {
+    if (cacheMissesCounter == null) {
+      synchronized (Telemetry.class) {
+        if (cacheMissesCounter == null) {
+          Meter meter = GlobalOpenTelemetry.getMeter("gcp.vertex.agent");
+          cacheMissesCounter =
+              meter
+                  .counterBuilder("adk.cache.misses")
+                  .setDescription("Number of context cache misses (new cache created)")
+                  .setUnit("1")
+                  .build();
+        }
+      }
+    }
+    return cacheMissesCounter;
+  }
+
+  private static LongCounter getCacheCreationsCounter() {
+    if (cacheCreationsCounter == null) {
+      synchronized (Telemetry.class) {
+        if (cacheCreationsCounter == null) {
+          Meter meter = GlobalOpenTelemetry.getMeter("gcp.vertex.agent");
+          cacheCreationsCounter =
+              meter
+                  .counterBuilder("adk.cache.creations")
+                  .setDescription("Number of context caches created")
+                  .setUnit("1")
+                  .build();
+        }
+      }
+    }
+    return cacheCreationsCounter;
+  }
+
+  private static LongCounter getCachedTokensSavedCounter() {
+    if (cachedTokensSavedCounter == null) {
+      synchronized (Telemetry.class) {
+        if (cachedTokensSavedCounter == null) {
+          Meter meter = GlobalOpenTelemetry.getMeter("gcp.vertex.agent");
+          cachedTokensSavedCounter =
+              meter
+                  .counterBuilder("adk.cache.tokens.saved")
+                  .setDescription("Total tokens saved by using cached content")
+                  .setUnit("tokens")
+                  .build();
+        }
+      }
+    }
+    return cachedTokensSavedCounter;
+  }
 
   private Telemetry() {}
 
-  /** Sets the OpenTelemetry instance to be used for tracing. This is for testing purposes only. */
-  public static void setTracerForTesting(Tracer tracer) {
-    Telemetry.tracer = tracer;
+  /**
+   * Record a cache hit event.
+   *
+   * <p>Called when an existing cache is successfully reused, indicating the cache validation passed
+   * and the cached content will be used instead of re-processing the static instruction.
+   *
+   * @param agentName Name of the agent using the cache
+   * @param cacheName Cache resource name (e.g., "cachedContents/abc123")
+   */
+  public static void recordCacheHit(String agentName, String cacheName) {
+    try {
+      getCacheHitsCounter()
+          .add(
+              1,
+              Attributes.of(
+                  AttributeKey.stringKey("agent.name"), agentName,
+                  AttributeKey.stringKey("cache.name"), cacheName));
+    } catch (Exception e) {
+      log.debug("Failed to record cache hit metric", e);
+    }
+  }
+
+  /**
+   * Record a cache miss event.
+   *
+   * <p>Called when no valid cache exists and a new cache will be created. This typically happens on
+   * the first request or when the cache has expired/been invalidated.
+   *
+   * @param agentName Name of the agent that missed the cache
+   */
+  public static void recordCacheMiss(String agentName) {
+    try {
+      getCacheMissesCounter()
+          .add(1, Attributes.of(AttributeKey.stringKey("agent.name"), agentName));
+    } catch (Exception e) {
+      log.debug("Failed to record cache miss metric", e);
+    }
+  }
+
+  /**
+   * Record cache creation.
+   *
+   * <p>Called when a new cache is successfully created via the Gemini Caching API.
+   *
+   * @param agentName Name of the agent for which the cache was created
+   * @param contentsCount Number of contents cached
+   */
+  public static void recordCacheCreation(String agentName, int contentsCount) {
+    try {
+      getCacheCreationsCounter()
+          .add(1, Attributes.of(AttributeKey.stringKey("agent.name"), agentName));
+    } catch (Exception e) {
+      log.debug("Failed to record cache creation metric", e);
+    }
+  }
+
+  /**
+   * Record tokens saved by using cached content.
+   *
+   * <p>Called when processing an LLM response that used cached content. The token count represents
+   * the number of tokens that were served from cache instead of being re-processed.
+   *
+   * @param agentName Name of the agent that saved tokens
+   * @param tokenCount Number of tokens served from cache
+   */
+  public static void recordCachedTokensSaved(String agentName, long tokenCount) {
+    try {
+      getCachedTokensSavedCounter()
+          .add(tokenCount, Attributes.of(AttributeKey.stringKey("agent.name"), agentName));
+    } catch (Exception e) {
+      log.debug("Failed to record cached tokens metric", e);
+    }
+  }
+
+  /**
+   * Gets the OpenTelemetry Meter for custom metric recording.
+   *
+   * @return The Meter instance
+   */
+  public static Meter getMeter() {
+    return GlobalOpenTelemetry.getMeter("gcp.vertex.agent");
+  }
+
+  /**
+   * Resets metric counters for testing.
+   *
+   * <p>This method is package-private and should only be used in tests to reset the
+   * lazy-initialized metric counters after GlobalOpenTelemetry.resetForTest() is called.
+   */
+  static void resetMetricsForTest() {
+    synchronized (Telemetry.class) {
+      cacheHitsCounter = null;
+      cacheMissesCounter = null;
+      cacheCreationsCounter = null;
+      cachedTokensSavedCounter = null;
+    }
   }
 
   /**
