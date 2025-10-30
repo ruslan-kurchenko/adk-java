@@ -671,14 +671,14 @@ public class GeminiContextCacheManager {
   }
 
   /**
-   * Appends tool declarations to fingerprint input.
+   * Appends tool names to fingerprint input.
    *
-   * <p>Includes both tool names and their full schemas to detect parameter changes. Tool schemas
-   * are sorted by name for deterministic hashing.
+   * <p>Uses tool names only (not full schemas) for deterministic fingerprinting across agent
+   * instances. Tool schema changes require agent redeployment, so name-based fingerprinting is
+   * sufficient for cache invalidation.
    *
-   * <p><b>BREAKING CHANGE (0.4.0):</b> This now includes tool schemas in fingerprint, not just
-   * names. Existing caches will be invalidated after upgrade, ensuring cache correctness when tool
-   * definitions change.
+   * <p>This approach ensures fingerprint stability when agents are recreated per-request with
+   * identical configurations (common pattern for concurrency).
    *
    * @param llmRequest Request containing tools
    * @param input StringBuilder to append to
@@ -690,31 +690,11 @@ public class GeminiContextCacheManager {
 
     input.append("tools:");
 
-    // Sort tools by name for deterministic fingerprinting
-    llmRequest.tools().entrySet().stream()
-        .sorted(Map.Entry.comparingByKey())
+    llmRequest.tools().keySet().stream()
+        .sorted()
         .forEach(
-            entry -> {
-              String toolName = entry.getKey();
-              BaseTool tool = entry.getValue();
-
-              input.append(toolName).append(":");
-
-              // Include full tool schema if available
-              tool.declaration()
-                  .ifPresentOrElse(
-                      declaration -> {
-                        // Serialize declaration to JSON for complete schema comparison
-                        String schemaJson = declaration.toJson();
-                        input.append(schemaJson);
-                      },
-                      () -> {
-                        // No declaration (e.g., code execution, grounding)
-                        // Use tool description as fallback
-                        input.append(tool.description());
-                      });
-
-              input.append(",");
+            toolName -> {
+              input.append(toolName).append(",");
             });
 
     input.append("|");
