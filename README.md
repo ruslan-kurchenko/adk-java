@@ -40,6 +40,11 @@ debugging, versioning, and deployment anywhere – from your laptop to the cloud
 -   **Modular Multi-Agent Systems**: Design scalable applications by composing
     multiple specialized agents into flexible hierarchies.
 
+-   **Context Caching (v0.4.0+)**: Automatic Gemini context caching with 90% token
+    savings for multi-turn conversations. Includes per-session optimization, usage-based
+    refresh, and distributed lock support for production deployments.
+    [Sample](contrib/samples/contextcaching/) | [RFC](docs/CONTEXT_CACHING_RFC.md)
+
 ## 🚀 Installation
 
 If you're using Maven, add the following to your dependencies:
