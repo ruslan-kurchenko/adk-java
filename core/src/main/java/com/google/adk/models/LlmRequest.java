@@ -24,6 +24,8 @@ import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 import com.google.adk.JsonBaseModel;
+import com.google.adk.apps.ContextCacheConfig;
+import com.google.adk.models.cache.CacheMetadata;
 import com.google.adk.tools.BaseTool;
 import com.google.auto.value.AutoValue;
 import com.google.common.collect.ImmutableList;
@@ -85,6 +87,33 @@ public abstract class LlmRequest extends JsonBaseModel {
    */
   @JsonIgnore
   public abstract Map<String, BaseTool> tools();
+
+  /**
+   * Returns the context cache configuration for this request.
+   *
+   * @return An optional {@link ContextCacheConfig} containing cache settings.
+   */
+  @JsonProperty("cacheConfig")
+  public abstract Optional<ContextCacheConfig> cacheConfig();
+
+  /**
+   * Returns the cache metadata for this request.
+   *
+   * @return An optional {@link CacheMetadata} containing cache tracking information.
+   */
+  @JsonProperty("cacheMetadata")
+  public abstract Optional<CacheMetadata> cacheMetadata();
+
+  /**
+   * Returns the token count of cacheable contents from previous request.
+   *
+   * <p>This is used to determine if the request is large enough to warrant caching. The value is
+   * populated from the previous LLM response's usage metadata.
+   *
+   * @return An optional integer representing the cacheable content token count.
+   */
+  @JsonProperty("cacheableContentsTokenCount")
+  public abstract Optional<Integer> cacheableContentsTokenCount();
 
   /** returns the first system instruction text from the request if present. */
   @JsonIgnore
@@ -152,6 +181,36 @@ public abstract class LlmRequest extends JsonBaseModel {
     abstract Builder tools(Map<String, BaseTool> tools);
 
     abstract Map<String, BaseTool> tools();
+
+    /**
+     * Sets the context cache configuration for this request.
+     *
+     * @param cacheConfig The cache configuration
+     * @return This builder
+     */
+    @CanIgnoreReturnValue
+    @JsonProperty("cacheConfig")
+    public abstract Builder cacheConfig(ContextCacheConfig cacheConfig);
+
+    /**
+     * Sets the cache metadata for this request.
+     *
+     * @param cacheMetadata The cache metadata
+     * @return This builder
+     */
+    @CanIgnoreReturnValue
+    @JsonProperty("cacheMetadata")
+    public abstract Builder cacheMetadata(CacheMetadata cacheMetadata);
+
+    /**
+     * Sets the cacheable contents token count from previous request.
+     *
+     * @param tokenCount The token count
+     * @return This builder
+     */
+    @CanIgnoreReturnValue
+    @JsonProperty("cacheableContentsTokenCount")
+    public abstract Builder cacheableContentsTokenCount(Integer tokenCount);
 
     @CanIgnoreReturnValue
     public final Builder appendInstructions(List<String> instructions) {
