@@ -15,52 +15,10 @@
  */
 package com.google.adk.agents;
 
-import java.util.List;
-
 /** Configuration for SequentialAgent. */
 public class SequentialAgentConfig extends BaseAgentConfig {
 
-  // Callback configuration (names resolved via ComponentRegistry)
-  private List<CallbackRef> beforeAgentCallbacks;
-  private List<CallbackRef> afterAgentCallbacks;
-
-  /** Reference to a callback stored in the ComponentRegistry. */
-  public static class CallbackRef {
-    private String name;
-
-    public CallbackRef() {}
-
-    public CallbackRef(String name) {
-      this.name = name;
-    }
-
-    public String name() {
-      return name;
-    }
-
-    public void setName(String name) {
-      this.name = name;
-    }
-  }
-
   public SequentialAgentConfig() {
-    super();
-    setAgentClass("SequentialAgent");
-  }
-
-  public List<CallbackRef> beforeAgentCallbacks() {
-    return beforeAgentCallbacks;
-  }
-
-  public void setBeforeAgentCallbacks(List<CallbackRef> beforeAgentCallbacks) {
-    this.beforeAgentCallbacks = beforeAgentCallbacks;
-  }
-
-  public List<CallbackRef> afterAgentCallbacks() {
-    return afterAgentCallbacks;
-  }
-
-  public void setAfterAgentCallbacks(List<CallbackRef> afterAgentCallbacks) {
-    this.afterAgentCallbacks = afterAgentCallbacks;
+    super("SequentialAgent");
   }
 }
