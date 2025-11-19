@@ -320,14 +320,11 @@ public class ReplayPlugin extends BasePlugin {
   private void verifyLlmRequestMatch(
       LlmRequest recordedRequest, LlmRequest currentRequest, String agentName, int agentIndex) {
     LlmRequestComparator comparator = new LlmRequestComparator();
-    if (!comparator.equals(recordedRequest, currentRequest)) {
+    String diff = comparator.diff(recordedRequest, currentRequest);
+    if (!diff.isEmpty()) {
       throw new ReplayVerificationError(
           String.format(
-              "LLM request mismatch for agent '%s' (index %d):%nrecorded: %s%ncurrent: %s",
-              agentName,
-              agentIndex,
-              comparator.toComparisonMap(recordedRequest),
-              comparator.toComparisonMap(currentRequest)));
+              "LLM request mismatch for agent '%s' (index %d):%n%s", agentName, agentIndex, diff));
     }
   }
 

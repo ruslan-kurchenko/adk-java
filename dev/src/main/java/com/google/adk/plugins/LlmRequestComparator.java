@@ -16,8 +16,10 @@
 package com.google.adk.plugins;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jdk8.Jdk8Module;
+import com.flipkart.zjsonpatch.JsonDiff;
 import com.google.adk.models.LlmRequest;
 import com.google.genai.types.GenerateContentConfig;
 import com.google.genai.types.HttpOptions;
@@ -56,20 +58,52 @@ class LlmRequestComparator {
    * @return true if the requests match (excluding runtime-variable fields)
    */
   boolean equals(LlmRequest recorded, LlmRequest current) {
-    Map<String, Object> recordedMap = toComparisonMap(recorded);
-    Map<String, Object> currentMap = toComparisonMap(current);
-    return recordedMap.equals(currentMap);
+    JsonNode recordedNode = objectMapper.valueToTree(recorded);
+    JsonNode currentNode = objectMapper.valueToTree(current);
+    JsonNode patch = JsonDiff.asJson(recordedNode, currentNode);
+    return patch.isEmpty();
   }
 
   /**
-   * Converts an LlmRequest to a Map for comparison purposes.
+   * Generates a human-readable diff between two LlmRequest objects.
    *
-   * @param request the request to convert
-   * @return a Map representation with runtime-variable fields excluded
+   * @param recorded the recorded request
+   * @param current the current request
+   * @return a string describing the differences, or empty string if they match
    */
-  @SuppressWarnings("unchecked")
-  Map<String, Object> toComparisonMap(LlmRequest request) {
-    return objectMapper.convertValue(request, Map.class);
+  String diff(LlmRequest recorded, LlmRequest current) {
+    JsonNode recordedNode = objectMapper.valueToTree(recorded);
+    JsonNode currentNode = objectMapper.valueToTree(current);
+    JsonNode patch = JsonDiff.asJson(recordedNode, currentNode);
+    if (patch.isEmpty()) {
+      return "";
+    }
+
+    StringBuilder sb = new StringBuilder();
+    for (JsonNode op : patch) {
+      String operation = op.get("op").asText();
+      String path = op.get("path").asText();
+
+      if (operation.equals("replace")) {
+        JsonNode oldValue = recordedNode.at(path);
+        JsonNode newValue = op.get("value");
+        sb.append(
+            String.format(
+                "Mismatch at %s:%n  recorded: %s%n  current:  %s%n%n", path, oldValue, newValue));
+      } else if (operation.equals("add")) {
+        JsonNode newValue = op.get("value");
+        sb.append(String.format("Extra field at %s: %s%n%n", path, newValue));
+      } else if (operation.equals("remove")) {
+        JsonNode oldValue = recordedNode.at(path);
+        sb.append(String.format("Missing field at %s: %s%n%n", path, oldValue));
+      } else {
+        // Fallback for other operations (move, copy, test)
+        sb.append(op.toPrettyString())
+            .append(System.lineSeparator())
+            .append(System.lineSeparator());
+      }
+    }
+    return sb.toString();
   }
 
   /** Mix-in to exclude GenerateContentConfig fields that vary between runs. */
