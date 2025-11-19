@@ -72,6 +72,7 @@ public final class ConfigAgentUtils {
       Class<? extends BaseAgentConfig> configClass = getConfigClassForAgent(agentClass);
       BaseAgentConfig config = loadConfigAsType(absolutePath, configClass);
       logger.info("agentClass value = '{}'", config.agentClass());
+      logger.info("configClass value = '{}'", configClass.getName());
 
       // Use reflection to call the fromConfig method with the correct types
       java.lang.reflect.Method fromConfigMethod =
@@ -213,6 +214,10 @@ public final class ConfigAgentUtils {
 
     if (agentClass == LlmAgent.class) {
       return LlmAgentConfig.class;
+    }
+
+    if (agentClass == SequentialAgent.class) {
+      return SequentialAgentConfig.class;
     }
 
     // TODO: Add more agent class to config class mappings as needed
