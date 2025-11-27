@@ -39,7 +39,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
-import org.junit.Ignore;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.JUnit4;
@@ -226,7 +225,6 @@ public final class ContentsTest {
   }
 
   @Test
-  @Ignore("TODO: b/412663475 - Handle parallel function calls within the same event.")
   public void rearrangeHistory_parallelFCsSequentialFRs_returnsMergedFR() {
     Event fcEvent = createParallelFunctionCallEvent("fc1", "tool1", "call1", "tool2", "call2");
     Event frEvent1 = createFunctionResponseEvent("fr1", "tool1", "call1");
@@ -248,7 +246,6 @@ public final class ContentsTest {
   }
 
   @Test
-  @Ignore("TODO: b/412663475 - Handle parallel function calls within the same event.")
   public void rearrangeHistory_parallelFCsAsyncFRs_returnsMergedFR() {
     Event fcEvent = createParallelFunctionCallEvent("fc1", "tool1", "call1", "tool2", "call2");
     Event userEvent1 = createUserEvent("u2", "Wait");
@@ -443,6 +440,28 @@ public final class ContentsTest {
             events.get(1).content().get(), // fc1
             events.get(3).content().get()) // fr1 (merged)
         .inOrder();
+  }
+
+  @Test
+  public void processRequest_sequentialFCFR_returnsOriginalList() {
+    Event e1 = createUserEvent("e1", "Not important");
+    Event e2 =
+        createAgentEventWithTextAndFunctionCall(
+            AGENT, "e2", "some text", "tool1", "call1", ImmutableMap.of("request", "foo"));
+    Event e3 =
+        createFunctionResponseEvent(
+            AGENT, "e3", "tool1", "call1", ImmutableMap.of("response", "bar"));
+    Event e4 =
+        createAgentEventWithTextAndFunctionCall(
+            AGENT, "e4", "some other text", "tool2", "call2", ImmutableMap.of("request", "X"));
+    Event e5 =
+        createFunctionResponseEvent(
+            AGENT, "e5", "tool2", "call2", ImmutableMap.of("response", "Y"));
+    ImmutableList<Event> inputEvents = ImmutableList.of(e1, e2, e3, e4, e5);
+
+    List<Content> result = runContentsProcessor(inputEvents);
+
+    assertThat(result).isEqualTo(eventsToContents(inputEvents));
   }
 
   private static Event createUserEvent(String id, String text) {
