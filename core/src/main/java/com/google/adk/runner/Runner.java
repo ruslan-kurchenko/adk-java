@@ -514,10 +514,12 @@ public class Runner {
                   .agent()
                   .runLive(invocationContext)
                   .doOnNext(event -> this.sessionService.appendEvent(session, event))
-                  .doOnError(
+                  .onErrorResumeNext(
                       throwable -> {
                         span.setStatus(StatusCode.ERROR, "Error in runLive Flowable execution");
                         span.recordException(throwable);
+                        span.end();
+                        return Flowable.error(throwable);
                       }));
     } catch (Throwable t) {
       span.setStatus(StatusCode.ERROR, "Error during runLive synchronous setup");
