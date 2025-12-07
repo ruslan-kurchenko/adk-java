@@ -45,7 +45,6 @@ import io.reactivex.rxjava3.core.Completable;
 import io.reactivex.rxjava3.core.Single;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Optional;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -228,19 +227,14 @@ public class ContextCacheProcessorTest {
     RunConfig runConfig = RunConfig.builder().setContextCacheConfig(cacheConfig).build();
     Session session = createSessionWithEvents(ImmutableList.of(sameInvocationEvent));
     InvocationContext context =
-        new InvocationContext(
-            sessionService,
-            new InMemoryArtifactService(),
-            null,
-            null,
-            Optional.empty(),
-            Optional.empty(),
-            currentInvocationId, // Same ID
-            agent,
-            session,
-            Optional.empty(),
-            runConfig,
-            false);
+        InvocationContext.builder()
+            .sessionService(sessionService)
+            .artifactService(new InMemoryArtifactService())
+            .invocationId(currentInvocationId) // Same ID
+            .agent(agent)
+            .session(session)
+            .runConfig(runConfig)
+            .build();
 
     LlmRequest request = LlmRequest.builder().build();
 
@@ -937,37 +931,27 @@ public class ContextCacheProcessorTest {
 
   private InvocationContext createContext(BaseAgent agent, List<Event> events) {
     Session session = createSessionWithEvents(events);
-    return new InvocationContext(
-        sessionService,
-        new InMemoryArtifactService(),
-        null,
-        null,
-        Optional.empty(),
-        Optional.empty(),
-        "test-invocation-id",
-        agent,
-        session,
-        Optional.empty(),
-        RunConfig.builder().build(),
-        false);
+    return InvocationContext.builder()
+        .sessionService(sessionService)
+        .artifactService(new InMemoryArtifactService())
+        .invocationId("test-invocation-id")
+        .agent(agent)
+        .session(session)
+        .runConfig(RunConfig.builder().build())
+        .build();
   }
 
   private InvocationContext createContextWithRunConfig(
       BaseAgent agent, List<Event> events, RunConfig runConfig) {
     Session session = createSessionWithEvents(events);
-    return new InvocationContext(
-        sessionService,
-        new InMemoryArtifactService(),
-        null,
-        null,
-        Optional.empty(),
-        Optional.empty(),
-        "test-invocation-id",
-        agent,
-        session,
-        Optional.empty(),
-        runConfig,
-        false);
+    return InvocationContext.builder()
+        .sessionService(sessionService)
+        .artifactService(new InMemoryArtifactService())
+        .invocationId("test-invocation-id")
+        .agent(agent)
+        .session(session)
+        .runConfig(runConfig)
+        .build();
   }
 
   private Session createSessionWithEvents(List<Event> events) {

@@ -117,6 +117,7 @@ public abstract class LlmResponse extends JsonBaseModel {
    */
   @JsonProperty("cacheMetadata")
   public abstract Optional<CacheMetadata> cacheMetadata();
+
   public abstract Builder toBuilder();
 
   /** Builder for constructing {@link LlmResponse} instances. */
@@ -206,6 +207,7 @@ public abstract class LlmResponse extends JsonBaseModel {
      */
     @CanIgnoreReturnValue
     public abstract Builder cacheMetadata(Optional<CacheMetadata> cacheMetadata);
+
     @CanIgnoreReturnValue
     public final Builder response(GenerateContentResponse response) {
       Optional<List<Candidate>> candidatesOpt = response.candidates();

@@ -39,8 +39,6 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ExecutionException;
 import javax.annotation.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -474,6 +472,7 @@ public class Gemini extends BaseLlm {
     original.responseModalities().ifPresent(builder::responseModalities);
     original.safetySettings().ifPresent(builder::safetySettings);
   }
+
   @Override
   public BaseLlmConnection connect(LlmRequest llmRequest) {
     if (!apiClient.vertexAI()) {
