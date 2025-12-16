@@ -32,6 +32,7 @@ import com.google.adk.tools.BaseToolset;
 import com.google.adk.tools.ExitLoopTool;
 import com.google.adk.tools.GoogleSearchTool;
 import com.google.adk.tools.LoadArtifactsTool;
+import com.google.adk.tools.UrlContextTool;
 import com.google.adk.tools.mcp.McpToolset;
 import java.util.Map;
 import java.util.Optional;
@@ -105,6 +106,7 @@ public class ComponentRegistry {
     registerAdkToolInstance("google_search", GoogleSearchTool.INSTANCE);
     registerAdkToolInstance("load_artifacts", LoadArtifactsTool.INSTANCE);
     registerAdkToolInstance("exit_loop", ExitLoopTool.INSTANCE);
+    registerAdkToolInstance("url_context", UrlContextTool.INSTANCE);
 
     registerAdkToolClass(AgentTool.class);
 
