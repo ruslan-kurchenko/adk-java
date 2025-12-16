@@ -63,6 +63,7 @@ import org.slf4j.LoggerFactory;
  *   <li>"google_search" - GoogleSearchTool instance
  *   <li>"code_execution" - BuiltInCodeExecutionTool instance
  *   <li>"exit_loop" - ExitLoopTool instance
+ *   <li>"url_context" - UrlContextTool instance
  * </ul>
  *
  * <p>Example usage:
