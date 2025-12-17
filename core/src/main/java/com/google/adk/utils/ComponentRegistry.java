@@ -32,6 +32,7 @@ import com.google.adk.tools.BaseToolset;
 import com.google.adk.tools.ExitLoopTool;
 import com.google.adk.tools.GoogleSearchTool;
 import com.google.adk.tools.LoadArtifactsTool;
+import com.google.adk.tools.LongRunningFunctionTool;
 import com.google.adk.tools.UrlContextTool;
 import com.google.adk.tools.mcp.McpToolset;
 import java.util.Map;
@@ -110,6 +111,7 @@ public class ComponentRegistry {
     registerAdkToolInstance("url_context", UrlContextTool.INSTANCE);
 
     registerAdkToolClass(AgentTool.class);
+    registerAdkToolClass(LongRunningFunctionTool.class);
 
     registerAdkToolsetClass(McpToolset.class);
     // TODO: add all python tools that also exist in Java.
