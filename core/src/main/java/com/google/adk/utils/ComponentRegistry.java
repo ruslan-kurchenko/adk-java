@@ -29,6 +29,7 @@ import com.google.adk.agents.SequentialAgent;
 import com.google.adk.tools.AgentTool;
 import com.google.adk.tools.BaseTool;
 import com.google.adk.tools.BaseToolset;
+import com.google.adk.tools.ExampleTool;
 import com.google.adk.tools.ExitLoopTool;
 import com.google.adk.tools.GoogleMapsTool;
 import com.google.adk.tools.GoogleSearchTool;
@@ -115,6 +116,7 @@ public class ComponentRegistry {
 
     registerAdkToolClass(AgentTool.class);
     registerAdkToolClass(LongRunningFunctionTool.class);
+    registerAdkToolClass(ExampleTool.class);
 
     registerAdkToolsetClass(McpToolset.class);
     // TODO: add all python tools that also exist in Java.
