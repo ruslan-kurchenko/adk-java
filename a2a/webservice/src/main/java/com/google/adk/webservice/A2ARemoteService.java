@@ -1,7 +1,7 @@
 package com.google.adk.webservice;
 
 import com.google.adk.a2a.A2ASendMessageExecutor;
-import com.google.adk.a2a.ResponseConverter;
+import com.google.adk.a2a.converters.ResponseConverter;
 import io.a2a.spec.JSONRPCError;
 import io.a2a.spec.Message;
 import io.a2a.spec.MessageSendParams;

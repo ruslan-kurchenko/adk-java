@@ -3,6 +3,9 @@ package com.google.adk.a2a;
 import static com.google.common.base.Strings.isNullOrEmpty;
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
 
+import com.google.adk.a2a.converters.ConversationPreprocessor;
+import com.google.adk.a2a.converters.RequestConverter;
+import com.google.adk.a2a.converters.ResponseConverter;
 import com.google.adk.agents.BaseAgent;
 import com.google.adk.agents.RunConfig;
 import com.google.adk.artifacts.InMemoryArtifactService;
