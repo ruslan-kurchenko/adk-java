@@ -30,6 +30,7 @@ import com.google.adk.tools.AgentTool;
 import com.google.adk.tools.BaseTool;
 import com.google.adk.tools.BaseToolset;
 import com.google.adk.tools.ExitLoopTool;
+import com.google.adk.tools.GoogleMapsTool;
 import com.google.adk.tools.GoogleSearchTool;
 import com.google.adk.tools.LoadArtifactsTool;
 import com.google.adk.tools.LongRunningFunctionTool;
@@ -65,6 +66,7 @@ import org.slf4j.LoggerFactory;
  *   <li>"code_execution" - BuiltInCodeExecutionTool instance
  *   <li>"exit_loop" - ExitLoopTool instance
  *   <li>"url_context" - UrlContextTool instance
+ *   <li>"google_maps_grounding" - GoogleMapsTool instance
  * </ul>
  *
  * <p>Example usage:
@@ -109,6 +111,7 @@ public class ComponentRegistry {
     registerAdkToolInstance("load_artifacts", LoadArtifactsTool.INSTANCE);
     registerAdkToolInstance("exit_loop", ExitLoopTool.INSTANCE);
     registerAdkToolInstance("url_context", UrlContextTool.INSTANCE);
+    registerAdkToolInstance("google_maps_grounding", GoogleMapsTool.INSTANCE);
 
     registerAdkToolClass(AgentTool.class);
     registerAdkToolClass(LongRunningFunctionTool.class);
