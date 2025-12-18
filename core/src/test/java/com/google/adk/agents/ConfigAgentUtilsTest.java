@@ -1381,4 +1381,34 @@ public final class ConfigAgentUtilsTest {
     callbackRef.setName("updated-name");
     assertThat(callbackRef.name()).isEqualTo("updated-name");
   }
+
+  @Test
+  public void fromConfig_validYamlLoopAgent_createsLoopAgent()
+      throws IOException, ConfigurationException {
+    File subAgentFile = tempFolder.newFile("sub_agent.yaml");
+    Files.writeString(
+        subAgentFile.toPath(),
+        """
+        agent_class: LlmAgent
+        name: sub_agent
+        description: A test subagent
+        instruction: You are a helpful subagent
+        """);
+
+    File configFile = tempFolder.newFile("loop_agent.yaml");
+    Files.writeString(
+        configFile.toPath(),
+        """
+        name: testLoopAgent
+        description: A test loop agent
+        agent_class: LoopAgent
+        max_iterations: 5
+        sub_agents:
+          - config_path: sub_agent.yaml
+        """);
+    String configPath = configFile.getAbsolutePath();
+    BaseAgent agent = ConfigAgentUtils.fromConfig(configPath);
+    assertThat(agent).isNotNull();
+    assertThat(agent).isInstanceOf(LoopAgent.class);
+  }
 }
