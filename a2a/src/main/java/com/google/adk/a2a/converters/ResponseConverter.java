@@ -19,8 +19,8 @@ import org.slf4j.LoggerFactory;
 /**
  * Utility for converting ADK events to A2A spec messages (and back).
  *
- * @apiNote **EXPERIMENTAL:** Subject to change, rename, or removal in any future patch release. Do
- *     not use in production code.
+ * <p>**EXPERIMENTAL:** Subject to change, rename, or removal in any future patch release. Do not
+ * use in production code.
  */
 public final class ResponseConverter {
   private static final Logger logger = LoggerFactory.getLogger(ResponseConverter.class);

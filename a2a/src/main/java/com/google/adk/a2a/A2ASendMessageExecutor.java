@@ -32,8 +32,8 @@ import org.slf4j.LoggerFactory;
 /**
  * Shared SendMessage execution between HTTP service and other integrations.
  *
- * @apiNote **EXPERIMENTAL:** Subject to change, rename, or removal in any future patch release. Do
- *     not use in production code.
+ * <p>**EXPERIMENTAL:** Subject to change, rename, or removal in any future patch release. Do not
+ * use in production code.
  */
 public final class A2ASendMessageExecutor {
   private static final Logger logger = LoggerFactory.getLogger(A2ASendMessageExecutor.class);

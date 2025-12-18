@@ -47,8 +47,8 @@ import org.slf4j.LoggerFactory;
  *   <li>Session state management across requests
  * </ul>
  *
- * @apiNote **EXPERIMENTAL:** Subject to change, rename, or removal in any future patch release. Do
- *     not use in production code.
+ * <p>**EXPERIMENTAL:** Subject to change, rename, or removal in any future patch release. Do not
+ * use in production code.
  */
 public class RemoteA2AAgent extends BaseAgent {
 
