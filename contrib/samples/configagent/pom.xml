@@ -13,6 +13,9 @@
     <artifactId>configagent-samples</artifactId>
     <packaging>jar</packaging>
 
+    <name>Config Agent Samples</name>
+    <description>Samples for Config Agent.</description>
+
     <properties>
         <maven.compiler.source>11</maven.compiler.source>
         <maven.compiler.target>11</maven.compiler.target>
