@@ -119,9 +119,13 @@ public class GeminiContextCacheManager {
    *
    * @param llmRequest Request containing cache config and existing metadata
    * @param cacheContentsCount Number of contents to include in cache
+   * @param cacheStrategy Cache strategy ("explicit" for ADK-managed, "implicit" for Gemini
+   *     automatic)
    * @return Single emitting updated cache metadata
+   * @since 0.4.0
    */
-  public Single<CacheMetadata> handleContextCaching(LlmRequest llmRequest, int cacheContentsCount) {
+  public Single<CacheMetadata> handleContextCaching(
+      LlmRequest llmRequest, int cacheContentsCount, String cacheStrategy) {
 
     ContextCacheConfig cacheConfig = llmRequest.cacheConfig().orElse(null);
     if (cacheConfig == null) {
@@ -132,11 +136,11 @@ public class GeminiContextCacheManager {
     CacheMetadata existingMetadata = llmRequest.cacheMetadata().orElse(null);
 
     if (canReuseExistingCache(existingMetadata, llmRequest, cacheContentsCount, cacheConfig)) {
-      return reuseCache(existingMetadata);
+      return reuseCache(existingMetadata, cacheStrategy);
     }
 
     if (shouldCreateNewCache(existingMetadata, llmRequest, cacheContentsCount)) {
-      return createNewCache(llmRequest, cacheContentsCount);
+      return createNewCache(llmRequest, cacheContentsCount, cacheStrategy);
     }
 
     return returnFingerprintOnlyMetadata(llmRequest, cacheContentsCount);
@@ -165,9 +169,9 @@ public class GeminiContextCacheManager {
     return false;
   }
 
-  private Single<CacheMetadata> reuseCache(CacheMetadata metadata) {
+  private Single<CacheMetadata> reuseCache(CacheMetadata metadata, String cacheStrategy) {
     logger.debug("Cache is valid, reusing: {}", metadata.cacheName().get());
-    Telemetry.recordCacheHit("cache-manager", metadata.cacheName().get());
+    Telemetry.recordCacheHit("cache-manager", metadata.cacheName().get(), cacheStrategy);
     return Single.just(metadata);
   }
 
@@ -203,14 +207,16 @@ public class GeminiContextCacheManager {
    *
    * @param llmRequest Request to create cache for
    * @param cacheContentsCount Number of contents to cache
+   * @param cacheStrategy Cache strategy for telemetry tagging
    * @return Single emitting created cache metadata
    */
-  private Single<CacheMetadata> createNewCache(LlmRequest llmRequest, int cacheContentsCount) {
+  private Single<CacheMetadata> createNewCache(
+      LlmRequest llmRequest, int cacheContentsCount, String cacheStrategy) {
     String fingerprint = generateCacheFingerprint(llmRequest, cacheContentsCount);
     String lockKey = "cache-creation:" + fingerprint;
 
     logger.debug("Fingerprint-only metadata matches, acquiring lock for cache creation");
-    Telemetry.recordCacheMiss("cache-manager");
+    Telemetry.recordCacheMiss("cache-manager", cacheStrategy);
 
     return distributedLock
         .acquire(lockKey, LOCK_TIMEOUT)
@@ -218,7 +224,7 @@ public class GeminiContextCacheManager {
             lockHandle -> {
               logger.debug("Lock acquired for {}, creating cache", lockKey);
 
-              return createCache(llmRequest, cacheContentsCount, fingerprint)
+              return createCache(llmRequest, cacheContentsCount, fingerprint, cacheStrategy)
                   .doFinally(
                       () -> {
                         lockHandle
@@ -239,7 +245,7 @@ public class GeminiContextCacheManager {
                     "Lock timeout for {}, proceeding with cache creation. "
                         + "Duplicate detection will handle any race conditions.",
                     lockKey);
-                return createCache(llmRequest, cacheContentsCount, fingerprint);
+                return createCache(llmRequest, cacheContentsCount, fingerprint, cacheStrategy);
               }
               return Single.error(error);
             });
@@ -262,10 +268,11 @@ public class GeminiContextCacheManager {
    * @param llmRequest Request containing system instruction and configuration
    * @param cacheContentsCount Number of contents to cache
    * @param fingerprint Pre-computed fingerprint for this cache
+   * @param cacheStrategy Cache strategy for telemetry tagging
    * @return Single emitting created cache metadata
    */
   private Single<CacheMetadata> createCache(
-      LlmRequest llmRequest, int cacheContentsCount, String fingerprint) {
+      LlmRequest llmRequest, int cacheContentsCount, String fingerprint, String cacheStrategy) {
 
     return Single.fromCallable(
             () -> {
@@ -279,7 +286,7 @@ public class GeminiContextCacheManager {
 
               logCacheCreation(cacheName, modelName, cacheContentsCount, config);
               warnIfCacheCostIsHigh(cacheContentsCount, config);
-              recordCacheCreationMetrics(cacheContentsCount);
+              recordCacheCreationMetrics(cacheContentsCount, cacheStrategy);
 
               return buildCacheMetadata(cacheName, fingerprint, cacheContentsCount, expireTime);
             })
@@ -522,8 +529,8 @@ public class GeminiContextCacheManager {
     return (tokenCount / 1_000_000.0) * (ttlSeconds / 3600.0);
   }
 
-  private void recordCacheCreationMetrics(int cacheContentsCount) {
-    Telemetry.recordCacheCreation("cache-manager", cacheContentsCount);
+  private void recordCacheCreationMetrics(int cacheContentsCount, String cacheStrategy) {
+    Telemetry.recordCacheCreation("cache-manager", cacheContentsCount, cacheStrategy);
   }
 
   private CacheMetadata buildCacheMetadata(

@@ -69,6 +69,8 @@ public class Telemetry {
 
   private static final AttributeKey<String> AGENT_NAME_KEY = AttributeKey.stringKey("agent.name");
   private static final AttributeKey<String> CACHE_NAME_KEY = AttributeKey.stringKey("cache.name");
+  private static final AttributeKey<String> CACHE_STRATEGY_KEY =
+      AttributeKey.stringKey("cache.strategy");
 
   private static volatile LongCounter cacheHitsCounter;
   private static volatile LongCounter cacheMissesCounter;
@@ -171,12 +173,21 @@ public class Telemetry {
    *
    * @param agentName Name of the agent using the cache
    * @param cacheName Cache resource name (e.g., "cachedContents/abc123")
+   * @param cacheStrategy Cache strategy ("explicit" for ADK-managed, "implicit" for Gemini
+   *     automatic)
+   * @since 0.4.0
    */
-  public static void recordCacheHit(String agentName, String cacheName) {
+  public static void recordCacheHit(String agentName, String cacheName, String cacheStrategy) {
     recordCacheMetric(
         getCacheHitsCounter(),
         1,
-        Attributes.of(AGENT_NAME_KEY, agentName, CACHE_NAME_KEY, cacheName));
+        Attributes.of(
+            AGENT_NAME_KEY,
+            agentName,
+            CACHE_NAME_KEY,
+            cacheName,
+            CACHE_STRATEGY_KEY,
+            cacheStrategy));
   }
 
   /**
@@ -185,9 +196,15 @@ public class Telemetry {
    * <p>Called when no valid cache exists and a new cache will be created.
    *
    * @param agentName Name of the agent that missed the cache
+   * @param cacheStrategy Cache strategy ("explicit" for ADK-managed, "implicit" for Gemini
+   *     automatic)
+   * @since 0.4.0
    */
-  public static void recordCacheMiss(String agentName) {
-    recordCacheMetric(getCacheMissesCounter(), 1, Attributes.of(AGENT_NAME_KEY, agentName));
+  public static void recordCacheMiss(String agentName, String cacheStrategy) {
+    recordCacheMetric(
+        getCacheMissesCounter(),
+        1,
+        Attributes.of(AGENT_NAME_KEY, agentName, CACHE_STRATEGY_KEY, cacheStrategy));
   }
 
   /**
@@ -197,9 +214,16 @@ public class Telemetry {
    *
    * @param agentName Name of the agent for which the cache was created
    * @param contentsCount Number of contents cached
+   * @param cacheStrategy Cache strategy ("explicit" for ADK-managed, "implicit" for Gemini
+   *     automatic)
+   * @since 0.4.0
    */
-  public static void recordCacheCreation(String agentName, int contentsCount) {
-    recordCacheMetric(getCacheCreationsCounter(), 1, Attributes.of(AGENT_NAME_KEY, agentName));
+  public static void recordCacheCreation(
+      String agentName, int contentsCount, String cacheStrategy) {
+    recordCacheMetric(
+        getCacheCreationsCounter(),
+        1,
+        Attributes.of(AGENT_NAME_KEY, agentName, CACHE_STRATEGY_KEY, cacheStrategy));
   }
 
   /**
@@ -209,10 +233,16 @@ public class Telemetry {
    *
    * @param agentName Name of the agent that saved tokens
    * @param tokenCount Number of tokens served from cache
+   * @param cacheStrategy Cache strategy ("explicit" for ADK-managed, "implicit" for Gemini
+   *     automatic)
+   * @since 0.4.0
    */
-  public static void recordCachedTokensSaved(String agentName, long tokenCount) {
+  public static void recordCachedTokensSaved(
+      String agentName, long tokenCount, String cacheStrategy) {
     recordCacheMetric(
-        getCachedTokensSavedCounter(), tokenCount, Attributes.of(AGENT_NAME_KEY, agentName));
+        getCachedTokensSavedCounter(),
+        tokenCount,
+        Attributes.of(AGENT_NAME_KEY, agentName, CACHE_STRATEGY_KEY, cacheStrategy));
   }
 
   /**
@@ -223,14 +253,22 @@ public class Telemetry {
    *
    * @param reason Reason for deletion (e.g., "duplicate-cleanup", "invalid", "manual")
    * @param cacheName Cache resource name being deleted
+   * @param cacheStrategy Cache strategy ("explicit" for ADK-managed, "implicit" for Gemini
+   *     automatic)
+   * @since 0.4.0
    */
-  public static void recordCacheDeletion(String reason, String cacheName) {
+  public static void recordCacheDeletion(String reason, String cacheName, String cacheStrategy) {
     try {
       getCacheDeletionsCounter()
           .add(
               1,
               Attributes.of(
-                  AttributeKey.stringKey("deletion.reason"), reason, CACHE_NAME_KEY, cacheName));
+                  AttributeKey.stringKey("deletion.reason"),
+                  reason,
+                  CACHE_NAME_KEY,
+                  cacheName,
+                  CACHE_STRATEGY_KEY,
+                  cacheStrategy));
     } catch (Exception e) {
       log.debug("Failed to record cache deletion metric", e);
     }
@@ -244,8 +282,12 @@ public class Telemetry {
    *
    * @param agentName Name of the agent with duplicate caches
    * @param duplicateCount Number of duplicate caches detected
+   * @param cacheStrategy Cache strategy ("explicit" for ADK-managed, "implicit" for Gemini
+   *     automatic)
+   * @since 0.4.0
    */
-  public static void recordCacheFragmentation(String agentName, int duplicateCount) {
+  public static void recordCacheFragmentation(
+      String agentName, int duplicateCount, String cacheStrategy) {
     try {
       getCacheFragmentationCounter()
           .add(
@@ -254,7 +296,9 @@ public class Telemetry {
                   AGENT_NAME_KEY,
                   agentName,
                   AttributeKey.longKey("duplicate.count"),
-                  (long) duplicateCount));
+                  (long) duplicateCount,
+                  CACHE_STRATEGY_KEY,
+                  cacheStrategy));
     } catch (Exception e) {
       log.debug("Failed to record cache fragmentation metric", e);
     }

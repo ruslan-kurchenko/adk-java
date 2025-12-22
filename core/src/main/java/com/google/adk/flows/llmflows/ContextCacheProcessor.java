@@ -82,6 +82,7 @@ public final class ContextCacheProcessor implements RequestProcessor {
 
     logger.debug("Processing context cache for agent: {}", agent.name());
 
+    String cacheStrategy = determineCacheStrategy(context, agent);
     ContextCacheConfig cacheConfig = context.runConfig().contextCacheConfig().get();
 
     // Check minimum token threshold
@@ -115,16 +116,29 @@ public final class ContextCacheProcessor implements RequestProcessor {
         .flatMap(
             requestWithTools ->
                 cacheManager
-                    .handleContextCaching(requestWithTools, cacheContentsCount)
+                    .handleContextCaching(requestWithTools, cacheContentsCount, cacheStrategy)
                     .map(
                         cacheMetadata ->
-                            handleCachingSuccess(request, cacheConfig, cacheMetadata, agent))
-                    .onErrorResumeNext(error -> handleCachingError(request, agent, error)));
+                            handleCachingSuccess(
+                                request, cacheConfig, cacheMetadata, agent, cacheStrategy))
+                    .onErrorResumeNext(
+                        error -> handleCachingError(request, agent, error, cacheStrategy)));
   }
 
   private boolean isCachingEnabled(InvocationContext context, LlmAgent agent) {
     return context.runConfig().contextCacheConfig().isPresent()
         && agent.staticInstruction().isPresent();
+  }
+
+  /**
+   * Determine cache strategy for telemetry tagging.
+   *
+   * @param context Invocation context
+   * @param agent LLM agent
+   * @return "explicit" if ADK caching is enabled, "implicit" for Gemini automatic caching
+   */
+  private String determineCacheStrategy(InvocationContext context, LlmAgent agent) {
+    return isCachingEnabled(context, agent) ? "explicit" : "implicit";
   }
 
   private LlmRequest buildRequestWithCacheInfo(
@@ -145,14 +159,16 @@ public final class ContextCacheProcessor implements RequestProcessor {
       LlmRequest request,
       ContextCacheConfig cacheConfig,
       CacheMetadata cacheMetadata,
-      LlmAgent agent) {
+      LlmAgent agent,
+      String cacheStrategy) {
 
     logger.debug(
-        "Cache metadata for agent {}: {}",
+        "Cache metadata for agent {}: {} (strategy: {})",
         agent.name(),
         cacheMetadata.isActiveCache()
             ? "active cache " + cacheMetadata.cacheName().get()
-            : "fingerprint-only");
+            : "fingerprint-only",
+        cacheStrategy);
 
     // Contents removal is handled in Gemini.java right before API call
     // (request here doesn't have contents populated yet)
@@ -167,10 +183,13 @@ public final class ContextCacheProcessor implements RequestProcessor {
   }
 
   private Single<RequestProcessingResult> handleCachingError(
-      LlmRequest request, LlmAgent agent, Throwable error) {
+      LlmRequest request, LlmAgent agent, Throwable error, String cacheStrategy) {
 
     logger.error(
-        "Cache operation failed for agent: {}, proceeding without cache", agent.name(), error);
+        "Cache operation failed for agent: {}, strategy: {}, proceeding without cache",
+        agent.name(),
+        cacheStrategy,
+        error);
 
     return passThrough(request);
   }
@@ -303,7 +322,7 @@ public final class ContextCacheProcessor implements RequestProcessor {
       logger.warn(
           "Detected {} duplicate caches for agent {}, cleaning up", uniqueCaches.size(), agentName);
 
-      Telemetry.recordCacheFragmentation(agentName, uniqueCaches.size());
+      Telemetry.recordCacheFragmentation(agentName, uniqueCaches.size(), "explicit");
 
       cleanupDuplicateCaches(uniqueCaches, currentMetadata);
     }
@@ -339,7 +358,8 @@ public final class ContextCacheProcessor implements RequestProcessor {
                   .subscribe(
                       () -> {
                         logger.info("Successfully deleted duplicate cache: {}", olderCacheName);
-                        Telemetry.recordCacheDeletion("duplicate-cleanup", olderCacheName);
+                        Telemetry.recordCacheDeletion(
+                            "duplicate-cleanup", olderCacheName, "explicit");
                       },
                       error ->
                           logger.error(

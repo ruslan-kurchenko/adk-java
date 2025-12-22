@@ -176,10 +176,29 @@ public abstract class BaseLlmFlow implements BaseFlow {
           .ifPresent(
               tokenCount -> {
                 if (tokenCount > 0) {
-                  Telemetry.recordCachedTokensSaved(context.agent().name(), tokenCount);
+                  String cacheStrategy = determineCacheStrategy(context);
+                  Telemetry.recordCachedTokensSaved(
+                      context.agent().name(), tokenCount, cacheStrategy);
                 }
               });
     }
+  }
+
+  /**
+   * Determine cache strategy for telemetry tagging.
+   *
+   * @param context Invocation context
+   * @return "explicit" if ADK caching is enabled, "implicit" for Gemini automatic caching
+   */
+  private static String determineCacheStrategy(InvocationContext context) {
+    if (context.agent() instanceof LlmAgent agent) {
+      boolean cachingEnabled =
+          context.runConfig().contextCacheConfig().isPresent()
+              && agent.staticInstruction().isPresent();
+      return cachingEnabled ? "explicit" : "implicit";
+    }
+
+    return "implicit";
   }
 
   /**
