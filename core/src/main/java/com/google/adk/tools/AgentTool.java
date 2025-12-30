@@ -144,6 +144,13 @@ public class AgentTool extends BaseTool {
               Event lastEvent = optionalLastEvent.get();
               Optional<String> outputText = lastEvent.content().map(Content::text);
 
+              // Forward state delta to parent session.
+              if (lastEvent.actions() != null
+                  && lastEvent.actions().stateDelta() != null
+                  && !lastEvent.actions().stateDelta().isEmpty()) {
+                toolContext.state().putAll(lastEvent.actions().stateDelta());
+              }
+
               if (outputText.isEmpty()) {
                 return ImmutableMap.of();
               }
