@@ -21,6 +21,7 @@ import com.google.adk.events.Event;
 import com.google.adk.flows.llmflows.ResumabilityConfig;
 import com.google.adk.memory.BaseMemoryService;
 import com.google.adk.models.LlmCallsLimitExceededException;
+import com.google.adk.plugins.Plugin;
 import com.google.adk.plugins.PluginManager;
 import com.google.adk.sessions.BaseSessionService;
 import com.google.adk.sessions.Session;
@@ -42,7 +43,7 @@ public class InvocationContext {
   private final BaseSessionService sessionService;
   private final BaseArtifactService artifactService;
   private final BaseMemoryService memoryService;
-  private final PluginManager pluginManager;
+  private final Plugin pluginManager;
   private final Optional<LiveRequestQueue> liveRequestQueue;
   private final Map<String, ActiveStreamingTool> activeStreamingTools = new ConcurrentHashMap<>();
   private final String invocationId;
@@ -80,7 +81,7 @@ public class InvocationContext {
       BaseSessionService sessionService,
       BaseArtifactService artifactService,
       BaseMemoryService memoryService,
-      PluginManager pluginManager,
+      Plugin pluginManager,
       Optional<LiveRequestQueue> liveRequestQueue,
       Optional<String> branch,
       String invocationId,
@@ -235,7 +236,7 @@ public class InvocationContext {
   }
 
   /** Returns the plugin manager for accessing tools and plugins. */
-  public PluginManager pluginManager() {
+  public Plugin pluginManager() {
     return pluginManager;
   }
 
@@ -376,7 +377,7 @@ public class InvocationContext {
     private BaseSessionService sessionService;
     private BaseArtifactService artifactService;
     private BaseMemoryService memoryService;
-    private PluginManager pluginManager = new PluginManager();
+    private Plugin pluginManager = new PluginManager();
     private Optional<LiveRequestQueue> liveRequestQueue = Optional.empty();
     private Optional<String> branch = Optional.empty();
     private String invocationId = newInvocationContextId();
@@ -430,7 +431,7 @@ public class InvocationContext {
      * @return this builder instance for chaining.
      */
     @CanIgnoreReturnValue
-    public Builder pluginManager(PluginManager pluginManager) {
+    public Builder pluginManager(Plugin pluginManager) {
       this.pluginManager = pluginManager;
       return this;
     }

@@ -400,8 +400,8 @@ public class Runner {
               Flowable.defer(
                       () ->
                           this.pluginManager
-                              .runOnUserMessageCallback(initialContext, newMessage)
-                              .switchIfEmpty(Single.just(newMessage))
+                              .onUserMessageCallback(initialContext, newMessage)
+                              .defaultIfEmpty(newMessage)
                               .flatMap(
                                   content ->
                                       (content != null)
@@ -439,8 +439,7 @@ public class Runner {
                                               // Call beforeRunCallback with updated session
                                               Maybe<Event> beforeRunEvent =
                                                   this.pluginManager
-                                                      .runBeforeRunCallback(
-                                                          contextWithUpdatedSession)
+                                                      .beforeRunCallback(contextWithUpdatedSession)
                                                       .map(
                                                           content ->
                                                               Event.builder()
@@ -473,7 +472,7 @@ public class Runner {
                                                                             session);
                                                                         return contextWithUpdatedSession
                                                                             .pluginManager()
-                                                                            .runOnEventCallback(
+                                                                            .onEventCallback(
                                                                                 contextWithUpdatedSession,
                                                                                 registeredEvent)
                                                                             .defaultIfEmpty(

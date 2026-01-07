@@ -390,7 +390,7 @@ public final class Functions {
             t ->
                 invocationContext
                     .pluginManager()
-                    .runOnToolErrorCallback(tool, functionArgs, toolContext, t)
+                    .onToolErrorCallback(tool, functionArgs, toolContext, t)
                     .map(isLive ? Optional::ofNullable : Optional::of)
                     .switchIfEmpty(Single.error(t)))
         .flatMapMaybe(
@@ -462,7 +462,7 @@ public final class Functions {
       LlmAgent agent = (LlmAgent) invocationContext.agent();
 
       Maybe<Map<String, Object>> pluginResult =
-          invocationContext.pluginManager().runBeforeToolCallback(tool, functionArgs, toolContext);
+          invocationContext.pluginManager().beforeToolCallback(tool, functionArgs, toolContext);
 
       Optional<List<? extends BeforeToolCallback>> callbacksOpt = agent.beforeToolCallback();
       if (callbacksOpt.isEmpty() || callbacksOpt.get().isEmpty()) {
@@ -496,7 +496,7 @@ public final class Functions {
       Maybe<Map<String, Object>> pluginResult =
           invocationContext
               .pluginManager()
-              .runAfterToolCallback(tool, functionArgs, toolContext, functionResult);
+              .afterToolCallback(tool, functionArgs, toolContext, functionResult);
 
       Optional<List<? extends AfterToolCallback>> callbacksOpt = agent.afterToolCallback();
       if (callbacksOpt.isEmpty() || callbacksOpt.get().isEmpty()) {

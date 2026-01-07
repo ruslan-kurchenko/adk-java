@@ -22,7 +22,7 @@ import com.google.adk.Telemetry;
 import com.google.adk.agents.Callbacks.AfterAgentCallback;
 import com.google.adk.agents.Callbacks.BeforeAgentCallback;
 import com.google.adk.events.Event;
-import com.google.adk.plugins.PluginManager;
+import com.google.adk.plugins.Plugin;
 import com.google.common.collect.ImmutableList;
 import com.google.errorprone.annotations.CanIgnoreReturnValue;
 import com.google.errorprone.annotations.DoNotCall;
@@ -255,9 +255,9 @@ public abstract class BaseAgent {
    * @return callback functions.
    */
   private ImmutableList<Function<CallbackContext, Maybe<Content>>> beforeCallbacksToFunctions(
-      PluginManager pluginManager, List<? extends BeforeAgentCallback> callbacks) {
+      Plugin pluginManager, List<? extends BeforeAgentCallback> callbacks) {
     return Stream.concat(
-            Stream.of(ctx -> pluginManager.runBeforeAgentCallback(this, ctx)),
+            Stream.of(ctx -> pluginManager.beforeAgentCallback(this, ctx)),
             callbacks.stream()
                 .map(callback -> (Function<CallbackContext, Maybe<Content>>) callback::call))
         .collect(toImmutableList());
@@ -270,9 +270,9 @@ public abstract class BaseAgent {
    * @return callback functions.
    */
   private ImmutableList<Function<CallbackContext, Maybe<Content>>> afterCallbacksToFunctions(
-      PluginManager pluginManager, List<? extends AfterAgentCallback> callbacks) {
+      Plugin pluginManager, List<? extends AfterAgentCallback> callbacks) {
     return Stream.concat(
-            Stream.of(ctx -> pluginManager.runAfterAgentCallback(this, ctx)),
+            Stream.of(ctx -> pluginManager.afterAgentCallback(this, ctx)),
             callbacks.stream()
                 .map(callback -> (Function<CallbackContext, Maybe<Content>>) callback::call))
         .collect(toImmutableList());
