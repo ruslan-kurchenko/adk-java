@@ -21,6 +21,7 @@ import static org.junit.Assert.assertThrows;
 
 import com.google.adk.agents.InvocationContext;
 import com.google.adk.agents.RunConfig;
+import com.google.adk.events.ToolConfirmation;
 import com.google.adk.sessions.Session;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
@@ -34,7 +35,6 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.JUnit4;
@@ -236,18 +236,10 @@ public final class FunctionToolTest {
     FunctionTool tool = FunctionTool.create(Functions.class, "returnAllSupportedParametersAsMap");
     ToolContext toolContext =
         ToolContext.builder(
-                new InvocationContext(
-                    /* sessionService= */ null,
-                    /* artifactService= */ null,
-                    /* memoryService= */ null,
-                    /* liveRequestQueue= */ Optional.empty(),
-                    /* branch= */ Optional.empty(),
-                    /* invocationId= */ null,
-                    /* agent= */ null,
-                    /* session= */ Session.builder("123").build(),
-                    /* userContent= */ Optional.empty(),
-                    /* runConfig= */ RunConfig.builder().build(),
-                    /* endInvocation= */ false))
+                InvocationContext.builder()
+                    .session(Session.builder("123").build())
+                    .runConfig(RunConfig.builder().build())
+                    .build())
             .functionCallId("functionCallId")
             .build();
 
@@ -593,18 +585,7 @@ public final class FunctionToolTest {
         FunctionTool.create(functions, "nonStaticReturnAllSupportedParametersAsMap");
     ToolContext toolContext =
         ToolContext.builder(
-                new InvocationContext(
-                    /* sessionService= */ null,
-                    /* artifactService= */ null,
-                    /* memoryService= */ null,
-                    /* liveRequestQueue= */ Optional.empty(),
-                    /* branch= */ Optional.empty(),
-                    /* invocationId= */ null,
-                    /* agent= */ null,
-                    /* session= */ Session.builder("123").build(),
-                    /* userContent= */ Optional.empty(),
-                    /* runConfig= */ null,
-                    /* endInvocation= */ false))
+                InvocationContext.builder().session(Session.builder("123").build()).build())
             .functionCallId("functionCallId")
             .build();
 
@@ -655,18 +636,7 @@ public final class FunctionToolTest {
         new FunctionTool(null, method, /* isLongRunning= */ false, /* requireConfirmation= */ true);
     ToolContext toolContext =
         ToolContext.builder(
-                new InvocationContext(
-                    /* sessionService= */ null,
-                    /* artifactService= */ null,
-                    /* memoryService= */ null,
-                    /* liveRequestQueue= */ Optional.empty(),
-                    /* branch= */ Optional.empty(),
-                    /* invocationId= */ null,
-                    /* agent= */ null,
-                    /* session= */ Session.builder("123").build(),
-                    /* userContent= */ Optional.empty(),
-                    /* runConfig= */ null,
-                    /* endInvocation= */ false))
+                InvocationContext.builder().session(Session.builder("123").build()).build())
             .functionCallId("functionCallId")
             .build();
 
@@ -699,18 +669,7 @@ public final class FunctionToolTest {
     FunctionTool tool = FunctionTool.create(functions, method, /* requireConfirmation= */ true);
     ToolContext toolContext =
         ToolContext.builder(
-                new InvocationContext(
-                    /* sessionService= */ null,
-                    /* artifactService= */ null,
-                    /* memoryService= */ null,
-                    /* liveRequestQueue= */ Optional.empty(),
-                    /* branch= */ Optional.empty(),
-                    /* invocationId= */ null,
-                    /* agent= */ null,
-                    /* session= */ Session.builder("123").build(),
-                    /* userContent= */ Optional.empty(),
-                    /* runConfig= */ null,
-                    /* endInvocation= */ false))
+                InvocationContext.builder().session(Session.builder("123").build()).build())
             .functionCallId("functionCallId")
             .build();
 
@@ -727,18 +686,7 @@ public final class FunctionToolTest {
     FunctionTool tool = FunctionTool.create(method, /* requireConfirmation= */ true);
     ToolContext toolContext =
         ToolContext.builder(
-                new InvocationContext(
-                    /* sessionService= */ null,
-                    /* artifactService= */ null,
-                    /* memoryService= */ null,
-                    /* liveRequestQueue= */ Optional.empty(),
-                    /* branch= */ Optional.empty(),
-                    /* invocationId= */ null,
-                    /* agent= */ null,
-                    /* session= */ Session.builder("123").build(),
-                    /* userContent= */ Optional.empty(),
-                    /* runConfig= */ null,
-                    /* endInvocation= */ false))
+                InvocationContext.builder().session(Session.builder("123").build()).build())
             .functionCallId("functionCallId")
             .build();
 
@@ -756,18 +704,7 @@ public final class FunctionToolTest {
             Functions.class, "voidReturnWithoutSchema", /* requireConfirmation= */ true);
     ToolContext toolContext =
         ToolContext.builder(
-                new InvocationContext(
-                    /* sessionService= */ null,
-                    /* artifactService= */ null,
-                    /* memoryService= */ null,
-                    /* liveRequestQueue= */ Optional.empty(),
-                    /* branch= */ Optional.empty(),
-                    /* invocationId= */ null,
-                    /* agent= */ null,
-                    /* session= */ Session.builder("123").build(),
-                    /* userContent= */ Optional.empty(),
-                    /* runConfig= */ null,
-                    /* endInvocation= */ false))
+                InvocationContext.builder().session(Session.builder("123").build()).build())
             .functionCallId("functionCallId")
             .build();
 
@@ -786,18 +723,7 @@ public final class FunctionToolTest {
             functions, "nonStaticVoidReturnWithoutSchema", /* requireConfirmation= */ true);
     ToolContext toolContext =
         ToolContext.builder(
-                new InvocationContext(
-                    /* sessionService= */ null,
-                    /* artifactService= */ null,
-                    /* memoryService= */ null,
-                    /* liveRequestQueue= */ Optional.empty(),
-                    /* branch= */ Optional.empty(),
-                    /* invocationId= */ null,
-                    /* agent= */ null,
-                    /* session= */ Session.builder("123").build(),
-                    /* userContent= */ Optional.empty(),
-                    /* runConfig= */ null,
-                    /* endInvocation= */ false))
+                InvocationContext.builder().session(Session.builder("123").build()).build())
             .functionCallId("functionCallId")
             .build();
 
