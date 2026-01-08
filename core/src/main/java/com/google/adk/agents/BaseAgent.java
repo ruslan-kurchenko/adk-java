@@ -187,13 +187,13 @@ public abstract class BaseAgent {
    * @return new context with updated branch name.
    */
   private InvocationContext createInvocationContext(InvocationContext parentContext) {
-    InvocationContext invocationContext = InvocationContext.copyOf(parentContext);
-    invocationContext.agent(this);
+    InvocationContext.Builder builder = parentContext.toBuilder();
+    builder.agent(this);
     // Check for branch to be truthy (not None, not empty string),
     if (parentContext.branch().filter(s -> !s.isEmpty()).isPresent()) {
-      invocationContext.branch(parentContext.branch().get() + "." + name());
+      builder.branch(parentContext.branch().get() + "." + name());
     }
-    return invocationContext;
+    return builder.build();
   }
 
   /**
@@ -303,17 +303,16 @@ public abstract class BaseAgent {
               return maybeContent
                   .map(
                       content -> {
-                        Event.Builder eventBuilder =
+                        invocationContext.setEndInvocation(true);
+                        return Optional.of(
                             Event.builder()
                                 .id(Event.generateEventId())
                                 .invocationId(invocationContext.invocationId())
                                 .author(name())
                                 .branch(invocationContext.branch())
-                                .actions(callbackContext.eventActions());
-
-                        eventBuilder.content(Optional.of(content));
-                        invocationContext.setEndInvocation(true);
-                        return Optional.of(eventBuilder.build());
+                                .actions(callbackContext.eventActions())
+                                .content(content)
+                                .build());
                       })
                   .toFlowable();
             })

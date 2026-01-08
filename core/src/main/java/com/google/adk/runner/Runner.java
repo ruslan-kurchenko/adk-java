@@ -386,12 +386,13 @@ public class Runner {
 
       // Create initial context
       InvocationContext initialContext =
-          newInvocationContextWithId(
-              session,
-              Optional.of(newMessage),
-              /* liveRequestQueue= */ Optional.empty(),
-              runConfig,
-              invocationId);
+          newInvocationContextBuilder(
+                  session,
+                  Optional.of(newMessage),
+                  /* liveRequestQueue= */ Optional.empty(),
+                  runConfig)
+              .invocationId(invocationId)
+              .build();
 
       return Telemetry.traceFlowable(
           spanContext,
@@ -427,14 +428,16 @@ public class Runner {
                                               // Create context with updated session for
                                               // beforeRunCallback
                                               InvocationContext contextWithUpdatedSession =
-                                                  newInvocationContextWithId(
-                                                      updatedSession,
-                                                      event.content(),
-                                                      /* liveRequestQueue= */ Optional.empty(),
-                                                      runConfig,
-                                                      invocationId);
-                                              contextWithUpdatedSession.agent(
-                                                  this.findAgentToRun(updatedSession, rootAgent));
+                                                  newInvocationContextBuilder(
+                                                          updatedSession,
+                                                          event.content(),
+                                                          /* liveRequestQueue= */ Optional.empty(),
+                                                          runConfig)
+                                                      .invocationId(invocationId)
+                                                      .agent(
+                                                          this.findAgentToRun(
+                                                              updatedSession, rootAgent))
+                                                      .build();
 
                                               // Call beforeRunCallback with updated session
                                               Maybe<Event> beforeRunEvent =
@@ -553,35 +556,14 @@ public class Runner {
       Optional<Content> newMessage,
       Optional<LiveRequestQueue> liveRequestQueue,
       RunConfig runConfig) {
-    BaseAgent rootAgent = this.agent;
-    var invocationContextBuilder =
-        InvocationContext.builder()
-            .sessionService(this.sessionService)
-            .artifactService(this.artifactService)
-            .memoryService(this.memoryService)
-            .pluginManager(this.pluginManager)
-            .agent(rootAgent)
-            .session(session)
-            .userContent(newMessage)
-            .runConfig(runConfig)
-            .resumabilityConfig(this.resumabilityConfig);
-    liveRequestQueue.ifPresent(invocationContextBuilder::liveRequestQueue);
-    var invocationContext = invocationContextBuilder.build();
-    invocationContext.agent(this.findAgentToRun(session, rootAgent));
-    return invocationContext;
+    return newInvocationContextBuilder(session, newMessage, liveRequestQueue, runConfig).build();
   }
 
-  /**
-   * Creates a new InvocationContext with a specific invocation ID.
-   *
-   * @return a new {@link InvocationContext} with the specified invocation ID.
-   */
-  private InvocationContext newInvocationContextWithId(
+  private InvocationContext.Builder newInvocationContextBuilder(
       Session session,
       Optional<Content> newMessage,
       Optional<LiveRequestQueue> liveRequestQueue,
-      RunConfig runConfig,
-      String invocationId) {
+      RunConfig runConfig) {
     BaseAgent rootAgent = this.agent;
     var invocationContextBuilder =
         InvocationContext.builder()
@@ -589,16 +571,14 @@ public class Runner {
             .artifactService(this.artifactService)
             .memoryService(this.memoryService)
             .pluginManager(this.pluginManager)
-            .invocationId(invocationId)
             .agent(rootAgent)
             .session(session)
-            .userContent(newMessage)
+            .userContent(newMessage.orElse(Content.fromParts()))
             .runConfig(runConfig)
-            .resumabilityConfig(this.resumabilityConfig);
+            .resumabilityConfig(this.resumabilityConfig)
+            .agent(this.findAgentToRun(session, rootAgent));
     liveRequestQueue.ifPresent(invocationContextBuilder::liveRequestQueue);
-    var invocationContext = invocationContextBuilder.build();
-    invocationContext.agent(this.findAgentToRun(session, rootAgent));
-    return invocationContext;
+    return invocationContextBuilder;
   }
 
   /**

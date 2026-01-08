@@ -20,7 +20,6 @@ import static com.google.common.truth.Truth.assertThat;
 import static org.junit.Assert.assertThrows;
 
 import com.google.adk.agents.InvocationContext;
-import com.google.adk.agents.RunConfig;
 import com.google.adk.events.ToolConfirmation;
 import com.google.adk.sessions.Session;
 import com.google.common.collect.ImmutableList;
@@ -236,10 +235,7 @@ public final class FunctionToolTest {
     FunctionTool tool = FunctionTool.create(Functions.class, "returnAllSupportedParametersAsMap");
     ToolContext toolContext =
         ToolContext.builder(
-                InvocationContext.builder()
-                    .session(Session.builder("123").build())
-                    .runConfig(RunConfig.builder().build())
-                    .build())
+                InvocationContext.builder().session(Session.builder("123").build()).build())
             .functionCallId("functionCallId")
             .build();
 
