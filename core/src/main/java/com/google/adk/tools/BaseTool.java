@@ -44,7 +44,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /** The base class for all ADK tools. */
-public abstract class BaseTool implements ToolMarker {
+public abstract class BaseTool {
   private final String name;
   private final String description;
   private final boolean isLongRunning;

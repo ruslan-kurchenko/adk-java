@@ -48,7 +48,6 @@ import com.google.adk.models.LlmRegistry;
 import com.google.adk.models.Model;
 import com.google.adk.tools.BaseTool;
 import com.google.adk.tools.BaseToolset;
-import com.google.adk.tools.ToolMarker;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
 import com.google.errorprone.annotations.CanIgnoreReturnValue;
@@ -85,7 +84,7 @@ public class LlmAgent extends BaseAgent {
   private final Optional<Model> model;
   private final Instruction instruction;
   private final Instruction globalInstruction;
-  private final List<ToolMarker> toolsUnion;
+  private final List<Object> toolsUnion;
   private final ImmutableList<BaseToolset> toolsets;
   private final Optional<GenerateContentConfig> generateContentConfig;
   // TODO: Remove exampleProvider field - examples should only be provided via ExampleTool
@@ -153,7 +152,7 @@ public class LlmAgent extends BaseAgent {
   }
 
   /** Extracts BaseToolset instances from the toolsUnion list. */
-  private static ImmutableList<BaseToolset> extractToolsets(List<ToolMarker> toolsUnion) {
+  private static ImmutableList<BaseToolset> extractToolsets(List<Object> toolsUnion) {
     return toolsUnion.stream()
         .filter(obj -> obj instanceof BaseToolset)
         .map(obj -> (BaseToolset) obj)
@@ -166,7 +165,7 @@ public class LlmAgent extends BaseAgent {
 
     private Instruction instruction;
     private Instruction globalInstruction;
-    private ImmutableList<ToolMarker> toolsUnion;
+    private ImmutableList<Object> toolsUnion;
     private GenerateContentConfig generateContentConfig;
     private BaseExampleProvider exampleProvider;
     private IncludeContents includeContents;
@@ -222,13 +221,13 @@ public class LlmAgent extends BaseAgent {
     }
 
     @CanIgnoreReturnValue
-    public Builder tools(List<? extends ToolMarker> tools) {
+    public Builder tools(List<?> tools) {
       this.toolsUnion = ImmutableList.copyOf(tools);
       return this;
     }
 
     @CanIgnoreReturnValue
-    public Builder tools(ToolMarker... tools) {
+    public Builder tools(Object... tools) {
       this.toolsUnion = ImmutableList.copyOf(tools);
       return this;
     }
@@ -680,7 +679,7 @@ public class LlmAgent extends BaseAgent {
    */
   public Flowable<BaseTool> canonicalTools(Optional<ReadonlyContext> context) {
     List<Flowable<BaseTool>> toolFlowables = new ArrayList<>();
-    for (ToolMarker toolOrToolset : toolsUnion) {
+    for (Object toolOrToolset : toolsUnion) {
       if (toolOrToolset instanceof BaseTool baseTool) {
         toolFlowables.add(Flowable.just(baseTool));
       } else if (toolOrToolset instanceof BaseToolset baseToolset) {
@@ -741,7 +740,7 @@ public class LlmAgent extends BaseAgent {
     return canonicalTools().toList();
   }
 
-  public List<ToolMarker> toolsUnion() {
+  public List<Object> toolsUnion() {
     return toolsUnion;
   }
 

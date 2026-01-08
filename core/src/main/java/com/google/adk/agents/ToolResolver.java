@@ -23,7 +23,6 @@ import com.google.adk.tools.BaseTool;
 import com.google.adk.tools.BaseTool.ToolArgsConfig;
 import com.google.adk.tools.BaseTool.ToolConfig;
 import com.google.adk.tools.BaseToolset;
-import com.google.adk.tools.ToolMarker;
 import com.google.adk.utils.ComponentRegistry;
 import com.google.common.collect.ImmutableList;
 import java.lang.reflect.Constructor;
@@ -57,14 +56,14 @@ final class ToolResolver {
    * @throws ConfigurationException if any tool configuration is invalid (e.g., missing name), if a
    *     tool cannot be found by its name or class, or if tool instantiation fails.
    */
-  static ImmutableList<ToolMarker> resolveToolsAndToolsets(
+  static ImmutableList<Object> resolveToolsAndToolsets(
       List<ToolConfig> toolConfigs, String configAbsPath) throws ConfigurationException {
 
     if (toolConfigs == null || toolConfigs.isEmpty()) {
       return ImmutableList.of();
     }
 
-    ImmutableList.Builder<ToolMarker> resolvedItems = ImmutableList.builder();
+    ImmutableList.Builder<Object> resolvedItems = ImmutableList.builder();
 
     for (ToolConfig toolConfig : toolConfigs) {
       try {
