@@ -40,6 +40,7 @@ import com.google.adk.models.LlmResponse;
 import com.google.adk.plugins.BasePlugin;
 import com.google.adk.sessions.Session;
 import com.google.adk.summarizer.EventsCompactionConfig;
+import com.google.adk.summarizer.LlmEventSummarizer;
 import com.google.adk.testing.TestLlm;
 import com.google.adk.testing.TestUtils;
 import com.google.adk.testing.TestUtils.EchoTool;
@@ -123,17 +124,18 @@ public final class RunnerTest {
 
   @Test
   public void eventsCompaction_enabled() {
-    LlmAgent agent =
-        createTestAgent(
-            createTestLlm(
-                createLlmResponse(createContent("llm 1")),
-                createLlmResponse(createContent("summary 1")),
-                createLlmResponse(createContent("llm 2")),
-                createLlmResponse(createContent("summary 2"))));
+    TestLlm testLlm =
+        createTestLlm(
+            createLlmResponse(createContent("llm 1")),
+            createLlmResponse(createContent("summary 1")),
+            createLlmResponse(createContent("llm 2")),
+            createLlmResponse(createContent("summary 2")));
+    LlmAgent agent = createTestAgent(testLlm);
 
     Runner runner =
         Runner.builder()
-            .eventsCompactionConfig(new EventsCompactionConfig(1, 0))
+            .eventsCompactionConfig(
+                new EventsCompactionConfig(1, 0, new LlmEventSummarizer(testLlm)))
             .agent(agent)
             .sessionService(this.runner.sessionService())
             .appName(this.runner.appName())

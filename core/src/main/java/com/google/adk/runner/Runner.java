@@ -29,14 +29,12 @@ import com.google.adk.events.Event;
 import com.google.adk.events.EventActions;
 import com.google.adk.flows.llmflows.ResumabilityConfig;
 import com.google.adk.memory.BaseMemoryService;
-import com.google.adk.models.Model;
 import com.google.adk.plugins.BasePlugin;
 import com.google.adk.plugins.PluginManager;
 import com.google.adk.sessions.BaseSessionService;
 import com.google.adk.sessions.InMemorySessionService;
 import com.google.adk.sessions.Session;
 import com.google.adk.summarizer.EventsCompactionConfig;
-import com.google.adk.summarizer.LlmEventSummarizer;
 import com.google.adk.summarizer.SlidingWindowEventCompactor;
 import com.google.adk.tools.BaseTool;
 import com.google.adk.tools.FunctionTool;
@@ -254,10 +252,7 @@ public class Runner {
     this.memoryService = memoryService;
     this.pluginManager = new PluginManager(plugins);
     this.resumabilityConfig = resumabilityConfig;
-    this.eventsCompactionConfig =
-        Optional.ofNullable(eventsCompactionConfig)
-            .map(c -> createEventsCompactionConfig(agent, c))
-            .orElse(null);
+    this.eventsCompactionConfig = eventsCompactionConfig;
   }
 
   /**
@@ -791,28 +786,6 @@ public class Runner {
   private boolean hasLiveRequestQueueParameter(FunctionTool functionTool) {
     return Arrays.stream(functionTool.func().getParameters())
         .anyMatch(parameter -> parameter.getType().equals(LiveRequestQueue.class));
-  }
-
-  /**
-   * Creates a new {@link EventsCompactionConfig} based on the given configuration. If the {@link
-   * com.google.adk.summarizer.BaseEventSummarizer} is missing, it will be default to the {@link
-   * LlmEventSummarizer} using the same model as the LLM base agent.
-   */
-  private static EventsCompactionConfig createEventsCompactionConfig(
-      BaseAgent agent, EventsCompactionConfig config) {
-    return new EventsCompactionConfig(
-        config.compactionInterval(),
-        config.overlapSize(),
-        config
-            .summarizer()
-            .or(
-                () ->
-                    Optional.of(agent)
-                        .filter(LlmAgent.class::isInstance)
-                        .map(LlmAgent.class::cast)
-                        .map(LlmAgent::resolvedModel)
-                        .flatMap(Model::model)
-                        .map(LlmEventSummarizer::new)));
   }
 
   // TODO: run statelessly
