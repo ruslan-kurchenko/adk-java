@@ -15,8 +15,6 @@
  */
 package com.google.adk.agents;
 
-import static com.google.common.collect.ImmutableList.toImmutableList;
-
 import com.google.adk.agents.Callbacks.AfterAgentCallback;
 import com.google.adk.agents.Callbacks.AfterAgentCallbackBase;
 import com.google.adk.agents.Callbacks.AfterAgentCallbackSync;
@@ -74,7 +72,7 @@ public class CallbackPlugin extends PluginManager {
 
   @SuppressWarnings("unchecked") // The builder ensures that the type is correct.
   private <T> ImmutableList<T> getCallbacks(Class<T> type) {
-    return callbacks.get(type).stream().map(callback -> (T) callback).collect(toImmutableList());
+    return (ImmutableList<T>) callbacks.get(type);
   }
 
   public ImmutableList<? extends Callbacks.BeforeAgentCallback> getBeforeAgentCallback() {

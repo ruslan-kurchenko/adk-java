@@ -368,7 +368,7 @@ public final class Functions {
         continue;
       }
       BaseTool tool = tools.get(functionCall.name().get());
-      if (tool.longRunning()) {
+      if (tool != null && tool.longRunning()) {
         longRunningFunctionCalls.add(functionCall.id().orElse(""));
       }
     }
