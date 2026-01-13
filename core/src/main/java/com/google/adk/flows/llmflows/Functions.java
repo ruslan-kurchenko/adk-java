@@ -263,8 +263,7 @@ public final class Functions {
                 invocationContext));
       }
 
-      Map<String, Object> functionArgs =
-          functionCall.args().orElse(isLive ? new HashMap<>() : ImmutableMap.of());
+      Map<String, Object> functionArgs = functionCall.args().orElse(new HashMap<>());
 
       Maybe<Map<String, Object>> maybeFunctionResult =
           maybeInvokeBeforeToolCall(invocationContext, tool, functionArgs, toolContext)
