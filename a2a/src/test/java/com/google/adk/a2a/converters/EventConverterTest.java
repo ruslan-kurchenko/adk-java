@@ -4,10 +4,8 @@ import static com.google.common.truth.Truth.assertThat;
 
 import com.google.adk.agents.BaseAgent;
 import com.google.adk.agents.InvocationContext;
-import com.google.adk.agents.RunConfig;
 import com.google.adk.artifacts.InMemoryArtifactService;
 import com.google.adk.events.Event;
-import com.google.adk.memory.BaseMemoryService;
 import com.google.adk.plugins.PluginManager;
 import com.google.adk.sessions.InMemorySessionService;
 import com.google.adk.sessions.Session;
@@ -86,19 +84,14 @@ public final class EventConverterTest {
         Session.builder("session-1").appName("demo").userId("user").events(events).build();
 
     InvocationContext context =
-        new InvocationContext(
-            new InMemorySessionService(),
-            new InMemoryArtifactService(),
-            (BaseMemoryService) null,
-            new PluginManager(),
-            Optional.empty(),
-            Optional.empty(),
-            "invocation-1",
-            new TestAgent(),
-            session,
-            Optional.empty(),
-            RunConfig.builder().build(),
-            false);
+        InvocationContext.builder()
+            .sessionService(new InMemorySessionService())
+            .artifactService(new InMemoryArtifactService())
+            .pluginManager(new PluginManager())
+            .invocationId("invocation-1")
+            .agent(new TestAgent())
+            .session(session)
+            .build();
 
     // Act
     Optional<Message> maybeMessage = EventConverter.convertEventsToA2AMessage(context);
