@@ -16,6 +16,8 @@
 
 package com.google.adk.summarizer;
 
+import static com.google.common.base.Preconditions.checkArgument;
+
 import com.google.adk.events.Event;
 import com.google.adk.events.EventCompaction;
 import com.google.adk.sessions.BaseSessionService;
@@ -97,11 +99,13 @@ public final class SlidingWindowEventCompactor implements EventCompactor {
    */
   @Override
   public Completable compact(Session session, BaseSessionService sessionService) {
+    BaseEventSummarizer summarizer = config.summarizer();
+    checkArgument(summarizer != null, "Missing BaseEventSummarizer for event compaction");
     logger.debug("Running event compaction for session {}", session.id());
 
     return Completable.fromMaybe(
         getCompactionEvents(session)
-            .flatMap(config.summarizer()::summarizeEvents)
+            .flatMap(summarizer::summarizeEvents)
             .flatMapSingle(e -> sessionService.appendEvent(session, e)));
   }
 

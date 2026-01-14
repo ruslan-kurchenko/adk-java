@@ -16,6 +16,8 @@
 
 package com.google.adk.summarizer;
 
+import javax.annotation.Nullable;
+
 /**
  * Configuration for event compaction.
  *
@@ -27,4 +29,9 @@ package com.google.adk.summarizer;
  * @param summarizer An event summarizer to use for compaction.
  */
 public record EventsCompactionConfig(
-    int compactionInterval, int overlapSize, BaseEventSummarizer summarizer) {}
+    int compactionInterval, int overlapSize, @Nullable BaseEventSummarizer summarizer) {
+
+  public EventsCompactionConfig(int compactionInterval, int overlapSize) {
+    this(compactionInterval, overlapSize, null);
+  }
+}

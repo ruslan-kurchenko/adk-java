@@ -29,12 +29,14 @@ import com.google.adk.events.Event;
 import com.google.adk.events.EventActions;
 import com.google.adk.flows.llmflows.ResumabilityConfig;
 import com.google.adk.memory.BaseMemoryService;
+import com.google.adk.models.Model;
 import com.google.adk.plugins.BasePlugin;
 import com.google.adk.plugins.PluginManager;
 import com.google.adk.sessions.BaseSessionService;
 import com.google.adk.sessions.InMemorySessionService;
 import com.google.adk.sessions.Session;
 import com.google.adk.summarizer.EventsCompactionConfig;
+import com.google.adk.summarizer.LlmEventSummarizer;
 import com.google.adk.summarizer.SlidingWindowEventCompactor;
 import com.google.adk.tools.BaseTool;
 import com.google.adk.tools.FunctionTool;
@@ -252,7 +254,7 @@ public class Runner {
     this.memoryService = memoryService;
     this.pluginManager = new PluginManager(plugins);
     this.resumabilityConfig = resumabilityConfig;
-    this.eventsCompactionConfig = eventsCompactionConfig;
+    this.eventsCompactionConfig = createEventsCompactionConfig(agent, eventsCompactionConfig);
   }
 
   /**
@@ -784,6 +786,27 @@ public class Runner {
   private boolean hasLiveRequestQueueParameter(FunctionTool functionTool) {
     return Arrays.stream(functionTool.func().getParameters())
         .anyMatch(parameter -> parameter.getType().equals(LiveRequestQueue.class));
+  }
+
+  @Nullable
+  private static EventsCompactionConfig createEventsCompactionConfig(
+      BaseAgent agent, @Nullable EventsCompactionConfig config) {
+    if (config == null || config.summarizer() != null) {
+      return config;
+    }
+    LlmEventSummarizer summarizer =
+        Optional.of(agent)
+            .filter(LlmAgent.class::isInstance)
+            .map(LlmAgent.class::cast)
+            .flatMap(LlmAgent::model)
+            .flatMap(Model::model)
+            .map(LlmEventSummarizer::new)
+            .orElseThrow(
+                () ->
+                    new IllegalArgumentException(
+                        "No BaseLlm model available for event compaction"));
+    return new EventsCompactionConfig(
+        config.compactionInterval(), config.overlapSize(), summarizer);
   }
 
   // TODO: run statelessly
