@@ -514,7 +514,7 @@ public class Runner {
                                                                             updatedSession,
                                                                             session);
                                                                         return contextWithUpdatedSession
-                                                                            .pluginManager()
+                                                                            .combinedPlugin()
                                                                             .onEventCallback(
                                                                                 contextWithUpdatedSession,
                                                                                 registeredEvent)

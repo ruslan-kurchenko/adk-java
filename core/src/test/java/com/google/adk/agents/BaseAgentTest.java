@@ -18,6 +18,8 @@ package com.google.adk.agents;
 
 import static com.google.common.truth.Truth.assertThat;
 
+import com.google.adk.agents.Callbacks.AfterAgentCallback;
+import com.google.adk.agents.Callbacks.BeforeAgentCallback;
 import com.google.adk.events.Event;
 import com.google.adk.testing.TestBaseAgent;
 import com.google.adk.testing.TestCallback;
@@ -25,6 +27,7 @@ import com.google.adk.testing.TestUtils;
 import com.google.common.collect.ImmutableList;
 import com.google.genai.types.Content;
 import com.google.genai.types.Part;
+import io.reactivex.rxjava3.core.Maybe;
 import java.util.List;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -69,6 +72,25 @@ public final class BaseAgentTest {
     assertThat(runAsyncImpl.wasCalled()).isFalse();
     assertThat(beforeCallback.wasCalled()).isTrue();
     assertThat(afterCallback.wasCalled()).isFalse();
+  }
+
+  @Test
+  public void runAsync_firstBeforeCallbackReturnsContent_skipsSecondBeforeCallback() {
+    Content callbackContent = Content.fromParts(Part.fromText("before_callback_output"));
+    var beforeCallback1 = TestCallback.returning(callbackContent);
+    var beforeCallback2 = TestCallback.<Content>returningEmpty();
+    TestBaseAgent agent =
+        new TestBaseAgent(
+            TEST_AGENT_NAME,
+            TEST_AGENT_DESCRIPTION,
+            ImmutableList.of(
+                beforeCallback1.asBeforeAgentCallback(), beforeCallback2.asBeforeAgentCallback()),
+            ImmutableList.of(),
+            TestCallback.<Void>returningEmpty().asRunAsyncImplSupplier("main_output"));
+    InvocationContext invocationContext = TestUtils.createInvocationContext(agent);
+    var unused = agent.runAsync(invocationContext).toList().blockingGet();
+    assertThat(beforeCallback1.wasCalled()).isTrue();
+    assertThat(beforeCallback2.wasCalled()).isFalse();
   }
 
   @Test
@@ -141,5 +163,102 @@ public final class BaseAgentTest {
     assertThat(runAsyncImpl.wasCalled()).isTrue();
     assertThat(beforeCallback.wasCalled()).isTrue();
     assertThat(afterCallback.wasCalled()).isTrue();
+  }
+
+  @Test
+  public void
+      runAsync_beforeCallbackMutatesStateAndReturnsEmpty_invokesRunAsyncImplAndReturnsStateEvent() {
+    var runAsyncImpl = TestCallback.<Void>returningEmpty();
+    Content runAsyncImplContent = Content.fromParts(Part.fromText("main_output"));
+    BeforeAgentCallback beforeCallback =
+        new BeforeAgentCallback() {
+          @Override
+          public Maybe<Content> call(CallbackContext context) {
+            context.state().put("key", "value");
+            return Maybe.empty();
+          }
+        };
+    var afterCallback = TestCallback.<Content>returningEmpty();
+    TestBaseAgent agent =
+        new TestBaseAgent(
+            TEST_AGENT_NAME,
+            TEST_AGENT_DESCRIPTION,
+            ImmutableList.of(beforeCallback),
+            ImmutableList.of(afterCallback.asAfterAgentCallback()),
+            runAsyncImpl.asRunAsyncImplSupplier(runAsyncImplContent));
+    InvocationContext invocationContext = TestUtils.createInvocationContext(agent);
+
+    List<Event> results = agent.runAsync(invocationContext).toList().blockingGet();
+
+    assertThat(results).hasSize(2);
+    // State event from before callback
+    assertThat(results.get(0).content()).isEmpty();
+    assertThat(results.get(0).actions().stateDelta()).containsEntry("key", "value");
+    // Content event from runAsyncImpl
+    assertThat(results.get(1).content()).hasValue(runAsyncImplContent);
+    assertThat(runAsyncImpl.wasCalled()).isTrue();
+    assertThat(afterCallback.wasCalled()).isTrue();
+  }
+
+  @Test
+  public void
+      runAsync_afterCallbackMutatesStateAndReturnsEmpty_invokesRunAsyncImplAndReturnsStateEvent() {
+    var runAsyncImpl = TestCallback.<Void>returningEmpty();
+    Content runAsyncImplContent = Content.fromParts(Part.fromText("main_output"));
+    var beforeCallback = TestCallback.<Content>returningEmpty();
+    AfterAgentCallback afterCallback =
+        new AfterAgentCallback() {
+          @Override
+          public Maybe<Content> call(CallbackContext context) {
+            context.state().put("key", "value");
+            return Maybe.empty();
+          }
+        };
+    TestBaseAgent agent =
+        new TestBaseAgent(
+            TEST_AGENT_NAME,
+            TEST_AGENT_DESCRIPTION,
+            ImmutableList.of(beforeCallback.asBeforeAgentCallback()),
+            ImmutableList.of(afterCallback),
+            runAsyncImpl.asRunAsyncImplSupplier(runAsyncImplContent));
+    InvocationContext invocationContext = TestUtils.createInvocationContext(agent);
+
+    List<Event> results = agent.runAsync(invocationContext).toList().blockingGet();
+
+    assertThat(results).hasSize(2);
+    // Content event from runAsyncImpl
+    assertThat(results.get(0).content()).hasValue(runAsyncImplContent);
+    // State event from after callback
+    assertThat(results.get(1).content()).isEmpty();
+    assertThat(results.get(1).actions().stateDelta()).containsEntry("key", "value");
+    assertThat(runAsyncImpl.wasCalled()).isTrue();
+    assertThat(beforeCallback.wasCalled()).isTrue();
+  }
+
+  @Test
+  public void runAsync_firstAfterCallbackReturnsContent_skipsSecondAfterCallback() {
+    var runAsyncImpl = TestCallback.<Void>returningEmpty();
+    Content runAsyncImplContent = Content.fromParts(Part.fromText("main_output"));
+    Content afterCallbackContent = Content.fromParts(Part.fromText("after_callback_output"));
+    var afterCallback1 = TestCallback.returning(afterCallbackContent);
+    var afterCallback2 = TestCallback.<Content>returningEmpty();
+    TestBaseAgent agent =
+        new TestBaseAgent(
+            TEST_AGENT_NAME,
+            TEST_AGENT_DESCRIPTION,
+            ImmutableList.of(),
+            ImmutableList.of(
+                afterCallback1.asAfterAgentCallback(), afterCallback2.asAfterAgentCallback()),
+            runAsyncImpl.asRunAsyncImplSupplier(runAsyncImplContent));
+    InvocationContext invocationContext = TestUtils.createInvocationContext(agent);
+
+    List<Event> results = agent.runAsync(invocationContext).toList().blockingGet();
+
+    assertThat(results).hasSize(2);
+    assertThat(results.get(0).content()).hasValue(runAsyncImplContent);
+    assertThat(results.get(1).content()).hasValue(afterCallbackContent);
+    assertThat(runAsyncImpl.wasCalled()).isTrue();
+    assertThat(afterCallback1.wasCalled()).isTrue();
+    assertThat(afterCallback2.wasCalled()).isFalse();
   }
 }

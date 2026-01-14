@@ -16,9 +16,6 @@
 
 package com.google.adk.agents;
 
-import static com.google.common.collect.ImmutableList.toImmutableList;
-import static java.util.Arrays.stream;
-
 import com.google.adk.Telemetry;
 import com.google.adk.agents.Callbacks.AfterAgentCallback;
 import com.google.adk.agents.Callbacks.BeforeAgentCallback;
@@ -255,10 +252,11 @@ public abstract class BaseAgent {
               spanContext,
               span,
               () ->
-                  callCallback(
-                          beforeCallbacksToFunctions(
-                              invocationContext.pluginManager(), callbackPlugin),
+                  processAgentCallbackResult(
+                          ctx -> invocationContext.combinedPlugin().beforeAgentCallback(this, ctx),
                           invocationContext)
+                      .map(Optional::of)
+                      .switchIfEmpty(Single.just(Optional.empty()))
                       .flatMapPublisher(
                           beforeEventOpt -> {
                             if (invocationContext.endInvocation()) {
@@ -271,11 +269,14 @@ public abstract class BaseAgent {
                             Flowable<Event> afterEvents =
                                 Flowable.defer(
                                     () ->
-                                        callCallback(
-                                                afterCallbacksToFunctions(
-                                                    invocationContext.pluginManager(),
-                                                    callbackPlugin),
+                                        processAgentCallbackResult(
+                                                ctx ->
+                                                    invocationContext
+                                                        .combinedPlugin()
+                                                        .afterAgentCallback(this, ctx),
                                                 invocationContext)
+                                            .map(Optional::of)
+                                            .switchIfEmpty(Single.just(Optional.empty()))
                                             .flatMapPublisher(Flowable::fromOptional));
 
                             return Flowable.concat(beforeEvents, mainEvents, afterEvents);
@@ -284,73 +285,32 @@ public abstract class BaseAgent {
   }
 
   /**
-   * Converts before-agent callbacks to functions.
+   * Processes the result of an agent callback, creating an {@link Event} if necessary.
    *
-   * @return callback functions.
+   * @param agentCallback The callback function.
+   * @param invocationContext The current invocation context.
+   * @return A {@link Maybe} emitting an {@link Event} if one is produced, or empty otherwise.
    */
-  private ImmutableList<Function<CallbackContext, Maybe<Content>>> beforeCallbacksToFunctions(
-      Plugin... plugins) {
-    return stream(plugins)
-        .map(
-            p ->
-                (Function<CallbackContext, Maybe<Content>>) ctx -> p.beforeAgentCallback(this, ctx))
-        .collect(toImmutableList());
-  }
-
-  /**
-   * Converts after-agent callbacks to functions.
-   *
-   * @return callback functions.
-   */
-  private ImmutableList<Function<CallbackContext, Maybe<Content>>> afterCallbacksToFunctions(
-      Plugin... plugins) {
-    return stream(plugins)
-        .map(
-            p -> (Function<CallbackContext, Maybe<Content>>) ctx -> p.afterAgentCallback(this, ctx))
-        .collect(toImmutableList());
-  }
-
-  /**
-   * Calls agent callbacks and returns the first produced event, if any.
-   *
-   * @param agentCallbacks Callback functions.
-   * @param invocationContext Current invocation context.
-   * @return single emitting first event, or empty if none.
-   */
-  private Single<Optional<Event>> callCallback(
-      List<Function<CallbackContext, Maybe<Content>>> agentCallbacks,
+  private Maybe<Event> processAgentCallbackResult(
+      Function<CallbackContext, Maybe<Content>> agentCallback,
       InvocationContext invocationContext) {
-    if (agentCallbacks == null || agentCallbacks.isEmpty()) {
-      return Single.just(Optional.empty());
-    }
-
-    CallbackContext callbackContext =
-        new CallbackContext(invocationContext, /* eventActions= */ null);
-
-    return Flowable.fromIterable(agentCallbacks)
-        .concatMap(
-            callback -> {
-              Maybe<Content> maybeContent = callback.apply(callbackContext);
-
-              return maybeContent
-                  .map(
-                      content -> {
-                        invocationContext.setEndInvocation(true);
-                        return Optional.of(
-                            Event.builder()
-                                .id(Event.generateEventId())
-                                .invocationId(invocationContext.invocationId())
-                                .author(name())
-                                .branch(invocationContext.branch())
-                                .actions(callbackContext.eventActions())
-                                .content(content)
-                                .build());
-                      })
-                  .toFlowable();
+    var callbackContext = new CallbackContext(invocationContext, /* eventActions= */ null);
+    return agentCallback
+        .apply(callbackContext)
+        .map(
+            content -> {
+              invocationContext.setEndInvocation(true);
+              return Event.builder()
+                  .id(Event.generateEventId())
+                  .invocationId(invocationContext.invocationId())
+                  .author(name())
+                  .branch(invocationContext.branch())
+                  .actions(callbackContext.eventActions())
+                  .content(content)
+                  .build();
             })
-        .firstElement()
         .switchIfEmpty(
-            Single.defer(
+            Maybe.defer(
                 () -> {
                   if (callbackContext.state().hasDelta()) {
                     Event.Builder eventBuilder =
@@ -361,9 +321,9 @@ public abstract class BaseAgent {
                             .branch(invocationContext.branch())
                             .actions(callbackContext.eventActions());
 
-                    return Single.just(Optional.of(eventBuilder.build()));
+                    return Maybe.just(eventBuilder.build());
                   } else {
-                    return Single.just(Optional.empty());
+                    return Maybe.empty();
                   }
                 }));
   }
