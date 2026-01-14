@@ -554,14 +554,12 @@ public class Runner {
     return Optional.ofNullable(eventsCompactionConfig)
         .map(SlidingWindowEventCompactor::new)
         .map(c -> c.compact(session, sessionService))
-        .orElse(Completable.complete());
+        .orElseGet(Completable::complete);
   }
 
   private void copySessionStates(Session source, Session target) {
     // TODO: remove this hack when deprecating all runAsync with Session.
-    for (var entry : source.state().entrySet()) {
-      target.state().put(entry.getKey(), entry.getValue());
-    }
+    target.state().putAll(source.state());
   }
 
   /**
@@ -621,7 +619,7 @@ public class Runner {
             .pluginManager(this.pluginManager)
             .agent(rootAgent)
             .session(session)
-            .userContent(newMessage.orElse(Content.fromParts()))
+            .userContent(newMessage.orElseGet(() -> Content.fromParts()))
             .runConfig(runConfig)
             .resumabilityConfig(this.resumabilityConfig)
             .agent(this.findAgentToRun(session, rootAgent));

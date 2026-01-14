@@ -123,9 +123,9 @@ public final class PartConverter {
   private static Optional<com.google.genai.types.Part> convertDataPartToGenAiPart(
       DataPart dataPart) {
     Map<String, Object> data =
-        Optional.ofNullable(dataPart.getData()).map(HashMap::new).orElse(new HashMap<>());
+        Optional.ofNullable(dataPart.getData()).map(HashMap::new).orElseGet(HashMap::new);
     Map<String, Object> metadata =
-        Optional.ofNullable(dataPart.getMetadata()).map(HashMap::new).orElse(new HashMap<>());
+        Optional.ofNullable(dataPart.getMetadata()).map(HashMap::new).orElseGet(HashMap::new);
 
     String metadataType = metadata.getOrDefault(A2A_DATA_PART_METADATA_TYPE_KEY, "").toString();
 

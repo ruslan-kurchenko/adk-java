@@ -443,7 +443,7 @@ public class LlmAgent extends BaseAgent {
       // Concatenate text from all parts, excluding thoughts.
       Object output;
       String rawResult =
-          event.content().flatMap(Content::parts).orElse(ImmutableList.of()).stream()
+          event.content().flatMap(Content::parts).orElseGet(ImmutableList::of).stream()
               .filter(part -> !isThought(part))
               .map(part -> part.text().orElse(""))
               .collect(joining());
