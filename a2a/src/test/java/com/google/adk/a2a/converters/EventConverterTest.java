@@ -10,16 +10,17 @@ import com.google.adk.plugins.PluginManager;
 import com.google.adk.sessions.InMemorySessionService;
 import com.google.adk.sessions.Session;
 import com.google.common.collect.ImmutableList;
+import com.google.common.collect.ImmutableMap;
 import com.google.genai.types.Content;
 import com.google.genai.types.FunctionCall;
 import com.google.genai.types.FunctionResponse;
 import com.google.genai.types.Part;
 import io.a2a.spec.DataPart;
 import io.a2a.spec.Message;
+import io.a2a.spec.TextPart;
 import io.reactivex.rxjava3.core.Flowable;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -45,7 +46,7 @@ public final class EventConverterTest {
                 FunctionCall.builder()
                     .name("roll_die")
                     .id("adk-call-1")
-                    .args(Map.of("sides", 6))
+                    .args(ImmutableMap.of("sides", 6))
                     .build())
             .build();
     Event callEvent =
@@ -65,7 +66,7 @@ public final class EventConverterTest {
                 FunctionResponse.builder()
                     .name("roll_die")
                     .id("adk-call-1")
-                    .response(Map.of("result", 3))
+                    .response(ImmutableMap.of("result", 3))
                     .build())
             .build();
     Event responseEvent =
@@ -91,6 +92,7 @@ public final class EventConverterTest {
             .invocationId("invocation-1")
             .agent(new TestAgent())
             .session(session)
+            .endInvocation(false)
             .build();
 
     // Act
@@ -100,7 +102,7 @@ public final class EventConverterTest {
     assertThat(maybeMessage).isPresent();
     Message message = maybeMessage.get();
     assertThat(message.getParts()).hasSize(3);
-    assertThat(message.getParts().get(0)).isInstanceOf(io.a2a.spec.TextPart.class);
+    assertThat(message.getParts().get(0)).isInstanceOf(TextPart.class);
     assertThat(message.getParts().get(1)).isInstanceOf(DataPart.class);
     assertThat(message.getParts().get(2)).isInstanceOf(DataPart.class);
 
@@ -109,14 +111,14 @@ public final class EventConverterTest {
         .isEqualTo(PartConverter.A2A_DATA_PART_METADATA_TYPE_FUNCTION_CALL);
     assertThat(callDataPart.getData()).containsEntry("name", "roll_die");
     assertThat(callDataPart.getData()).containsEntry("id", "adk-call-1");
-    assertThat(callDataPart.getData()).containsEntry("args", Map.of("sides", 6));
+    assertThat(callDataPart.getData()).containsEntry("args", ImmutableMap.of("sides", 6));
 
     DataPart responseDataPart = (DataPart) message.getParts().get(2);
     assertThat(responseDataPart.getMetadata().get(PartConverter.A2A_DATA_PART_METADATA_TYPE_KEY))
         .isEqualTo(PartConverter.A2A_DATA_PART_METADATA_TYPE_FUNCTION_RESPONSE);
     assertThat(responseDataPart.getData()).containsEntry("name", "roll_die");
     assertThat(responseDataPart.getData()).containsEntry("id", "adk-call-1");
-    assertThat(responseDataPart.getData()).containsEntry("response", Map.of("result", 3));
+    assertThat(responseDataPart.getData()).containsEntry("response", ImmutableMap.of("result", 3));
   }
 
   private static final class TestAgent extends BaseAgent {

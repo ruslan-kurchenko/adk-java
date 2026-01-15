@@ -1,7 +1,6 @@
 package com.google.adk.a2a;
 
 import static com.google.common.base.Strings.isNullOrEmpty;
-import static com.google.common.base.Strings.nullToEmpty;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.adk.a2a.converters.EventConverter;
@@ -10,16 +9,13 @@ import com.google.adk.agents.BaseAgent;
 import com.google.adk.agents.Callbacks;
 import com.google.adk.agents.InvocationContext;
 import com.google.adk.events.Event;
+import com.google.common.collect.ImmutableMap;
 import com.google.common.io.Resources;
 import com.google.errorprone.annotations.CanIgnoreReturnValue;
 import io.a2a.spec.AgentCard;
-import io.a2a.spec.EventKind;
 import io.a2a.spec.Message;
 import io.a2a.spec.MessageSendParams;
 import io.a2a.spec.SendMessageRequest;
-import io.a2a.spec.SendMessageResponse;
-import io.a2a.spec.Task;
-import io.a2a.spec.TaskStatus;
 import io.reactivex.rxjava3.core.Flowable;
 import java.io.IOException;
 import java.net.URL;
@@ -258,7 +254,7 @@ public class RemoteA2AAgent extends BaseAgent {
     Message a2aMessage = new Message.Builder(originalMessage).contextId(sessionId).build();
 
     Map<String, Object> metadata =
-        originalMessage.getMetadata() == null ? Map.of() : originalMessage.getMetadata();
+        originalMessage.getMetadata() == null ? ImmutableMap.of() : originalMessage.getMetadata();
 
     MessageSendParams params = new MessageSendParams(a2aMessage, null, metadata);
     SendMessageRequest request = new SendMessageRequest(invocationContext.invocationId(), params);
@@ -268,7 +264,6 @@ public class RemoteA2AAgent extends BaseAgent {
         .sendMessage(request)
         .flatMap(
             response -> {
-              String responseContextId = extractContextId(response);
               List<Event> events =
                   ResponseConverter.sendMessageResponseToEvents(
                       response,
@@ -296,34 +291,6 @@ public class RemoteA2AAgent extends BaseAgent {
         "_run_live_impl for " + getClass() + " via A2A is not implemented.");
   }
 
-  private static String extractContextId(SendMessageResponse response) {
-    if (response == null) {
-      return "";
-    }
-
-    EventKind result = response.getResult();
-    if (result instanceof Message message) {
-      String contextId = nullToEmpty(message.getContextId());
-      if (!contextId.isEmpty()) {
-        return contextId;
-      }
-    }
-    if (result instanceof Task task) {
-      String contextId = nullToEmpty(task.getContextId());
-      if (!contextId.isEmpty()) {
-        return contextId;
-      }
-      TaskStatus status = task.getStatus();
-      if (status != null && status.message() != null) {
-        String statusContext = nullToEmpty(status.message().getContextId());
-        if (!statusContext.isEmpty()) {
-          return statusContext;
-        }
-      }
-    }
-    return "";
-  }
-
   /** Exception thrown when the agent card cannot be resolved. */
   public static class AgentCardResolutionError extends RuntimeException {
     public AgentCardResolutionError(String message) {
@@ -331,17 +298,6 @@ public class RemoteA2AAgent extends BaseAgent {
     }
 
     public AgentCardResolutionError(String message, Throwable cause) {
-      super(message, cause);
-    }
-  }
-
-  /** Exception thrown when the A2A client encounters an error. */
-  public static class A2AClientError extends RuntimeException {
-    public A2AClientError(String message) {
-      super(message);
-    }
-
-    public A2AClientError(String message, Throwable cause) {
       super(message, cause);
     }
   }
