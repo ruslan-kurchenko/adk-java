@@ -108,7 +108,7 @@ public class CallbackPlugin extends PluginManager {
     // Ensures a unique name for each callback.
     private static final AtomicInteger callbackId = new AtomicInteger(0);
 
-    private final ImmutableList.Builder<BasePlugin> plugins = ImmutableList.builder();
+    private ImmutableList.Builder<BasePlugin> plugins = ImmutableList.builder();
     private final ListMultimap<Class<?>, Object> callbacks = ArrayListMultimap.create();
 
     Builder() {}
@@ -172,6 +172,20 @@ public class CallbackPlugin extends PluginManager {
       return addBeforeModelCallback(
           (callbackContext, llmRequest) ->
               Maybe.fromOptional(callback.call(callbackContext, llmRequest)));
+    }
+
+    // (b/476510024): Temporary workaround for ces
+    @CanIgnoreReturnValue
+    public Builder clearBeforeModelCallbacks() {
+      callbacks.removeAll(Callbacks.BeforeModelCallback.class);
+      ImmutableList.Builder<BasePlugin> updatedPlugins = ImmutableList.builder();
+      for (BasePlugin plugin : plugins.build()) {
+        if (!plugin.getName().startsWith("BeforeModelCallback_")) {
+          updatedPlugins.add(plugin);
+        }
+      }
+      plugins = updatedPlugins;
+      return this;
     }
 
     @CanIgnoreReturnValue
