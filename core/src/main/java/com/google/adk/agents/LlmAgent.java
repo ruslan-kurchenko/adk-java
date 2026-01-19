@@ -81,6 +81,7 @@ public class LlmAgent extends BaseAgent {
   }
 
   private final Optional<Model> model;
+  private final Optional<Instruction> staticInstruction;
   private final Instruction instruction;
   private final Instruction globalInstruction;
   private final List<Object> toolsUnion;
@@ -110,6 +111,7 @@ public class LlmAgent extends BaseAgent {
         builder.subAgents,
         builder.callbackPluginBuilder.build());
     this.model = Optional.ofNullable(builder.model);
+    this.staticInstruction = Optional.ofNullable(builder.staticInstruction);
     this.instruction =
         builder.instruction == null ? new Instruction.Static("") : builder.instruction;
     this.globalInstruction =
@@ -153,6 +155,7 @@ public class LlmAgent extends BaseAgent {
   public static class Builder extends BaseAgent.Builder<Builder> {
     private Model model;
 
+    private Instruction staticInstruction;
     private Instruction instruction;
     private Instruction globalInstruction;
     private ImmutableList<Object> toolsUnion;
@@ -178,6 +181,40 @@ public class LlmAgent extends BaseAgent {
     @CanIgnoreReturnValue
     public Builder model(BaseLlm model) {
       this.model = Model.builder().model(model).build();
+      return this;
+    }
+
+    /**
+     * Sets static instruction content for context caching.
+     *
+     * <p>Static instructions are content that never changes and doesn't contain placeholders. When
+     * combined with RunConfig.contextCacheConfig, static instructions are cached by the LLM
+     * provider, dramatically reducing latency and costs.
+     *
+     * <p><b>Important:</b> When staticInstruction is set, it becomes the system instruction
+     * (cached), and the regular instruction becomes user content (dynamic).
+     *
+     * @param staticInstruction The static instruction (cacheable)
+     * @return This builder
+     * @since 0.4.0
+     */
+    @CanIgnoreReturnValue
+    public Builder staticInstruction(Instruction staticInstruction) {
+      this.staticInstruction = staticInstruction;
+      return this;
+    }
+
+    /**
+     * Sets static instruction content for context caching.
+     *
+     * @param staticInstruction The static instruction string (cacheable)
+     * @return This builder
+     * @since 0.4.0
+     */
+    @CanIgnoreReturnValue
+    public Builder staticInstruction(String staticInstruction) {
+      this.staticInstruction =
+          (staticInstruction == null) ? null : new Instruction.Static(staticInstruction);
       return this;
     }
 
@@ -580,6 +617,43 @@ public class LlmAgent extends BaseAgent {
   /** Convenience overload of canonicalTools that accepts a non-optional ReadonlyContext. */
   public Flowable<BaseTool> canonicalTools(ReadonlyContext context) {
     return canonicalTools(Optional.ofNullable(context));
+  }
+
+  /**
+   * Returns the static instruction for this agent.
+   *
+   * <p>Static instructions are cacheable content that doesn't change between invocations.
+   *
+   * @return The static instruction, or empty if not set
+   * @since 0.4.0
+   */
+  public Optional<Instruction> staticInstruction() {
+    return staticInstruction;
+  }
+
+  /**
+   * Constructs the text static instruction for this agent.
+   *
+   * <p>This method is only for use by Agent Development Kit.
+   *
+   * @param context The context to retrieve the session state.
+   * @return The resolved static instruction as a {@link Single} wrapped Map.Entry. The key is the
+   *     instruction string and the value is a boolean indicating if state injection should be
+   *     bypassed.
+   * @since 0.4.0
+   */
+  public Single<Map.Entry<String, Boolean>> canonicalStaticInstruction(ReadonlyContext context) {
+    if (staticInstruction.isEmpty()) {
+      return Single.just(Map.entry("", false));
+    }
+
+    Instruction instr = staticInstruction.get();
+    if (instr instanceof Instruction.Static staticInstr) {
+      return Single.just(Map.entry(staticInstr.instruction(), false));
+    } else if (instr instanceof Instruction.Provider provider) {
+      return provider.getInstruction().apply(context).map(text -> Map.entry(text, true));
+    }
+    throw new IllegalStateException("Unknown Instruction subtype: " + instr.getClass());
   }
 
   public Instruction instruction() {

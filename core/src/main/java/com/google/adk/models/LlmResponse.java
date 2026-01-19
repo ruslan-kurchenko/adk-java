@@ -21,6 +21,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 import com.fasterxml.jackson.databind.annotation.JsonPOJOBuilder;
 import com.google.adk.JsonBaseModel;
+import com.google.adk.models.cache.CacheMetadata;
 import com.google.auto.value.AutoValue;
 import com.google.errorprone.annotations.CanIgnoreReturnValue;
 import com.google.genai.types.Candidate;
@@ -106,6 +107,17 @@ public abstract class LlmResponse extends JsonBaseModel {
   @JsonProperty("modelVersion")
   public abstract Optional<String> modelVersion();
 
+  /**
+   * Cache metadata associated with this response.
+   *
+   * <p>Contains cache identification and tracking information when context caching is enabled.
+   *
+   * @return The cache metadata, or empty if caching is not used
+   * @since 0.4.0
+   */
+  @JsonProperty("cacheMetadata")
+  public abstract Optional<CacheMetadata> cacheMetadata();
+
   public abstract Builder toBuilder();
 
   /** Builder for constructing {@link LlmResponse} instances. */
@@ -174,6 +186,27 @@ public abstract class LlmResponse extends JsonBaseModel {
     public abstract Builder modelVersion(@Nullable String modelVersion);
 
     public abstract Builder modelVersion(Optional<String> modelVersion);
+
+    /**
+     * Sets the cache metadata for this response.
+     *
+     * @param cacheMetadata The cache metadata
+     * @return This builder
+     * @since 0.4.0
+     */
+    @JsonProperty("cacheMetadata")
+    @CanIgnoreReturnValue
+    public abstract Builder cacheMetadata(@Nullable CacheMetadata cacheMetadata);
+
+    /**
+     * Sets the cache metadata for this response.
+     *
+     * @param cacheMetadata Optional cache metadata
+     * @return This builder
+     * @since 0.4.0
+     */
+    @CanIgnoreReturnValue
+    public abstract Builder cacheMetadata(Optional<CacheMetadata> cacheMetadata);
 
     @CanIgnoreReturnValue
     public final Builder response(GenerateContentResponse response) {

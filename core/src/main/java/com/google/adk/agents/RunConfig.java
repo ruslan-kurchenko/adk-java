@@ -16,12 +16,14 @@
 
 package com.google.adk.agents;
 
+import com.google.adk.apps.ContextCacheConfig;
 import com.google.auto.value.AutoValue;
 import com.google.common.collect.ImmutableList;
 import com.google.errorprone.annotations.CanIgnoreReturnValue;
 import com.google.genai.types.AudioTranscriptionConfig;
 import com.google.genai.types.Modality;
 import com.google.genai.types.SpeechConfig;
+import java.util.Optional;
 import javax.annotation.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -70,6 +72,19 @@ public abstract class RunConfig {
 
   public abstract int maxLlmCalls();
 
+  /**
+   * Context cache configuration for all agents in the app.
+   *
+   * <p>When present, enables context caching across all LLM agents. When absent (empty), context
+   * caching is disabled.
+   *
+   * <p>This matches Python ADK's implementation where ContextCacheConfig is set at the App level.
+   *
+   * @return The cache configuration, or empty if caching is disabled
+   * @since 0.4.0
+   */
+  public abstract Optional<ContextCacheConfig> contextCacheConfig();
+
   public abstract Builder toBuilder();
 
   public static Builder builder() {
@@ -78,7 +93,8 @@ public abstract class RunConfig {
         .setResponseModalities(ImmutableList.of())
         .setStreamingMode(StreamingMode.NONE)
         .setToolExecutionMode(ToolExecutionMode.NONE)
-        .setMaxLlmCalls(500);
+        .setMaxLlmCalls(500)
+        .setContextCacheConfig(Optional.empty());
   }
 
   public static Builder builder(RunConfig runConfig) {
@@ -90,7 +106,8 @@ public abstract class RunConfig {
         .setResponseModalities(runConfig.responseModalities())
         .setSpeechConfig(runConfig.speechConfig())
         .setOutputAudioTranscription(runConfig.outputAudioTranscription())
-        .setInputAudioTranscription(runConfig.inputAudioTranscription());
+        .setInputAudioTranscription(runConfig.inputAudioTranscription())
+        .setContextCacheConfig(runConfig.contextCacheConfig());
   }
 
   /** Builder for {@link RunConfig}. */
@@ -122,6 +139,28 @@ public abstract class RunConfig {
 
     @CanIgnoreReturnValue
     public abstract Builder setMaxLlmCalls(int maxLlmCalls);
+
+    /**
+     * Sets the context cache configuration for this run.
+     *
+     * @param contextCacheConfig The cache configuration
+     * @return This builder
+     * @since 0.4.0
+     */
+    @CanIgnoreReturnValue
+    public abstract Builder setContextCacheConfig(Optional<ContextCacheConfig> contextCacheConfig);
+
+    /**
+     * Sets the context cache configuration for this run.
+     *
+     * @param contextCacheConfig The cache configuration (nullable)
+     * @return This builder
+     * @since 0.4.0
+     */
+    @CanIgnoreReturnValue
+    public Builder setContextCacheConfig(@Nullable ContextCacheConfig contextCacheConfig) {
+      return setContextCacheConfig(Optional.ofNullable(contextCacheConfig));
+    }
 
     abstract RunConfig autoBuild();
 

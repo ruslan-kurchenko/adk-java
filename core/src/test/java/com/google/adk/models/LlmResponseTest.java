@@ -22,6 +22,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.adk.JsonBaseModel;
+import com.google.adk.models.cache.CacheMetadata;
 import com.google.common.collect.ImmutableList;
 import com.google.genai.types.Content;
 import com.google.genai.types.FinishReason;
@@ -217,5 +218,85 @@ public final class LlmResponseTest {
     assertThat(deserializedResponse.errorMessage()).isEmpty();
     assertThat(deserializedResponse.interrupted()).isEmpty();
     assertThat(deserializedResponse.usageMetadata()).isEmpty();
+  }
+
+  @Test
+  public void cacheMetadata_setAndRetrieve() {
+    CacheMetadata cacheMetadata =
+        CacheMetadata.builder()
+            .cacheName("cachedContents/test123")
+            .expireTime(System.currentTimeMillis() / 1000 + 1800)
+            .fingerprint("abc123def456")
+            .contentsCount(10)
+            .createdAt(System.currentTimeMillis() / 1000)
+            .build();
+
+    LlmResponse response =
+        LlmResponse.builder()
+            .content(createSampleContent("Test"))
+            .cacheMetadata(cacheMetadata)
+            .build();
+
+    assertThat(response.cacheMetadata()).hasValue(cacheMetadata);
+  }
+
+  @Test
+  public void cacheMetadata_notSet_returnsEmpty() {
+    LlmResponse response = LlmResponse.builder().content(createSampleContent("Test")).build();
+
+    assertThat(response.cacheMetadata()).isEmpty();
+  }
+
+  @Test
+  public void cacheMetadata_serializesToJson() throws JsonProcessingException {
+    CacheMetadata cacheMetadata =
+        CacheMetadata.builder().fingerprint("fingerprint123").contentsCount(7).build();
+
+    LlmResponse response =
+        LlmResponse.builder()
+            .content(createSampleContent("Test"))
+            .cacheMetadata(cacheMetadata)
+            .build();
+
+    String json = response.toJson();
+
+    assertThat(json).contains("\"cacheMetadata\":");
+    assertThat(json).contains("\"fingerprint\":\"fingerprint123\"");
+    assertThat(json).contains("\"contents_count\":7");
+  }
+
+  @Test
+  public void cacheMetadata_deserializesFromJson() throws JsonProcessingException {
+    String json =
+        "{"
+            + "\"content\": {\"parts\": [{\"text\": \"Test\"}]},"
+            + "\"cacheMetadata\": {"
+            + "\"fingerprint\": \"test_fingerprint\","
+            + "\"contents_count\": 15"
+            + "}"
+            + "}";
+
+    LlmResponse response = LlmResponse.fromJsonString(json, LlmResponse.class);
+
+    assertThat(response.cacheMetadata()).isPresent();
+    assertThat(response.cacheMetadata().get().fingerprint()).isEqualTo("test_fingerprint");
+    assertThat(response.cacheMetadata().get().contentsCount()).isEqualTo(15);
+  }
+
+  @Test
+  public void toBuilder_preservesCacheMetadata() {
+    CacheMetadata cacheMetadata =
+        CacheMetadata.builder().fingerprint("preserved123").contentsCount(5).build();
+
+    LlmResponse original =
+        LlmResponse.builder()
+            .content(createSampleContent("Original"))
+            .cacheMetadata(cacheMetadata)
+            .build();
+
+    LlmResponse rebuilt = original.toBuilder().turnComplete(true).build();
+
+    assertThat(rebuilt.cacheMetadata()).hasValue(cacheMetadata);
+    assertThat(rebuilt.turnComplete()).hasValue(true);
   }
 }
