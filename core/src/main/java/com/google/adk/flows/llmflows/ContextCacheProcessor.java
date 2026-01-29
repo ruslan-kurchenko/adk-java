@@ -354,12 +354,13 @@ public final class ContextCacheProcessor implements RequestProcessor {
   /**
    * Calculate how many contents should be cached.
    *
-   * <p>Cacheable contents include:
+   * <p>Cacheable contents include conversation history up to (but not including) the last user
+   * message batch.
    *
-   * <ol>
-   *   <li>System instruction (always cached if present) - counts as 1
-   *   <li>Conversation history up to (but not including) the last user message batch
-   * </ol>
+   * <p><b>Important:</b> System instruction is NOT counted here because it is stored separately in
+   * {@code GenerateContentConfig.systemInstruction()}, not in {@code llmRequest.contents()}. The
+   * count returned here is used to slice {@code llmRequest.contents()} in {@code
+   * Gemini.generateContent()}, so it must only reflect conversation contents.
    *
    * <p>The last continuous batch of user messages is NOT cached as it represents dynamic user input
    * that changes frequently.
@@ -367,36 +368,35 @@ public final class ContextCacheProcessor implements RequestProcessor {
    * <p><b>Examples:</b>
    *
    * <ul>
-   *   <li>First request: Returns 1 (system instruction only)
-   *   <li>After 1 turn: Returns 1 (system instruction, current user batch excludes history)
-   *   <li>After 2 turns: Returns 3 (system instruction + first turn's 2 events)
+   *   <li>First request: Returns 0 (no conversation history yet)
+   *   <li>After 1 turn: Returns 0 (current user batch excludes history)
+   *   <li>After 2 turns: Returns 2 (first turn's user + model events)
    * </ul>
    *
    * @param context Invocation context
-   * @return Number of contents to include in cache (minimum 1 if system instruction present)
+   * @return Number of conversation contents to include in cache (excludes system instruction)
    */
   private int calculateCacheContentsCount(InvocationContext context) {
     List<Event> events = context.session().events();
 
-    // Always include system instruction in cacheable count (if present)
-    int cacheableCount = hasSystemInstruction(context) ? 1 : 0;
+    // System instruction is NOT in contents() - it's in config.systemInstruction()
+    // Don't count it here as this count is used to slice llmRequest.contents()
+    int cacheableCount = 0;
 
     if (events.isEmpty()) {
-      logger.debug("First request: cacheable count = {} (system instruction only)", cacheableCount);
+      logger.debug("First request: cacheable count = 0 (no conversation history)");
       return cacheableCount;
     }
 
     // Find where the last user message batch starts
     int lastUserBatchStart = findLastUserMessageBatchStart(events);
 
-    // Cache everything BEFORE the last user batch + system instruction
-    cacheableCount += lastUserBatchStart;
+    // Cache everything BEFORE the last user batch (conversation contents only)
+    cacheableCount = lastUserBatchStart;
 
     logger.debug(
-        "Cacheable contents: {} (system: {}, history: {}, total events: {})",
+        "Cacheable contents: {} (history before last user batch, total events: {})",
         cacheableCount,
-        hasSystemInstruction(context) ? 1 : 0,
-        lastUserBatchStart,
         events.size());
 
     return cacheableCount;

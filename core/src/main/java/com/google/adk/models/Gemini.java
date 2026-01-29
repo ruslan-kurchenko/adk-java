@@ -448,13 +448,6 @@ public class Gemini extends BaseLlm {
    * <p>When using cached content, systemInstruction, tools, and toolConfig are already in the cache
    * and must NOT be included in the request (matches Python ADK implementation).
    *
-   * <p>Fields copied (response-related only):
-   *
-   * <ul>
-   *   <li>responseModalities
-   *   <li>safetySettings
-   * </ul>
-   *
    * <p>Fields excluded (already in CachedContent):
    *
    * <ul>
@@ -469,8 +462,36 @@ public class Gemini extends BaseLlm {
   private void copyNonCachedFields(
       GenerateContentConfig original, GenerateContentConfig.Builder builder) {
 
+    // Generation parameters
+    original.temperature().ifPresent(builder::temperature);
+    original.topP().ifPresent(builder::topP);
+    original.topK().ifPresent(builder::topK);
+    original.maxOutputTokens().ifPresent(builder::maxOutputTokens);
+    original.candidateCount().ifPresent(builder::candidateCount);
+    original.stopSequences().ifPresent(builder::stopSequences);
+    original.presencePenalty().ifPresent(builder::presencePenalty);
+    original.frequencyPenalty().ifPresent(builder::frequencyPenalty);
+    original.seed().ifPresent(builder::seed);
+
+    // Response format
+    original.responseMimeType().ifPresent(builder::responseMimeType);
+    original.responseSchema().ifPresent(builder::responseSchema);
     original.responseModalities().ifPresent(builder::responseModalities);
+
+    // Safety
     original.safetySettings().ifPresent(builder::safetySettings);
+
+    // Routing and model selection
+    original.routingConfig().ifPresent(builder::routingConfig);
+
+    // Logging and tracking
+    original.labels().ifPresent(builder::labels);
+    original.logprobs().ifPresent(builder::logprobs);
+    original.responseLogprobs().ifPresent(builder::responseLogprobs);
+
+    // Media
+    original.mediaResolution().ifPresent(builder::mediaResolution);
+    original.speechConfig().ifPresent(builder::speechConfig);
   }
 
   @Override

@@ -136,18 +136,18 @@ public class ContextCacheProcessorTest {
 
     assertThat(result.updatedRequest().cacheMetadata()).hasValue(mockMetadata);
     assertThat(result.updatedRequest().cacheConfig()).hasValue(cacheConfig);
-    verify(mockCacheManager).handleContextCaching(any(LlmRequest.class), eq(1));
+    verify(mockCacheManager).handleContextCaching(any(LlmRequest.class), eq(0));
   }
 
   @Test
-  public void processRequest_noSessionEvents_cachesSystemInstruction() {
+  public void processRequest_noSessionEvents_returnsZeroContentsCount() {
     ContextCacheConfig cacheConfig = ContextCacheConfig.builder().build();
     LlmAgent agent = createAgentWithCaching();
 
     CacheMetadata mockMetadata =
-        CacheMetadata.builder().fingerprint("fingerprint").contentsCount(1).build();
+        CacheMetadata.builder().fingerprint("fingerprint").contentsCount(0).build();
 
-    when(mockCacheManager.handleContextCaching(any(LlmRequest.class), eq(1)))
+    when(mockCacheManager.handleContextCaching(any(LlmRequest.class), eq(0)))
         .thenReturn(Single.just(mockMetadata));
 
     RunConfig runConfig = RunConfig.builder().setContextCacheConfig(cacheConfig).build();
@@ -157,7 +157,7 @@ public class ContextCacheProcessorTest {
     RequestProcessingResult result = processor.processRequest(context, request).blockingGet();
 
     assertThat(result.updatedRequest().cacheMetadata()).hasValue(mockMetadata);
-    verify(mockCacheManager).handleContextCaching(any(LlmRequest.class), eq(1));
+    verify(mockCacheManager).handleContextCaching(any(LlmRequest.class), eq(0));
   }
 
   @Test
@@ -575,7 +575,6 @@ public class ContextCacheProcessorTest {
     ContextCacheConfig cacheConfig = ContextCacheConfig.builder().build();
     LlmAgent agent = createAgentWithCaching();
 
-    // Events: agent, agent, user, user (last 2 are user batch, cache first 2 + system)
     List<Event> events =
         ImmutableList.of(
             createEvent("e1", "inv1", TEST_AGENT_NAME, null),
@@ -583,12 +582,10 @@ public class ContextCacheProcessorTest {
             createEvent("e3", "inv2", "user", null),
             createEvent("e4", "inv2", "user", null));
 
-    // Last user batch starts at index 2
-    // Cacheable: system (1) + history before batch (2) = 3
     CacheMetadata mockMetadata =
-        CacheMetadata.builder().fingerprint("fingerprint").contentsCount(3).build();
+        CacheMetadata.builder().fingerprint("fingerprint").contentsCount(2).build();
 
-    when(mockCacheManager.handleContextCaching(any(LlmRequest.class), eq(3)))
+    when(mockCacheManager.handleContextCaching(any(LlmRequest.class), eq(2)))
         .thenReturn(Single.just(mockMetadata));
 
     RunConfig runConfig = RunConfig.builder().setContextCacheConfig(cacheConfig).build();
@@ -597,12 +594,11 @@ public class ContextCacheProcessorTest {
 
     RequestProcessingResult result = processor.processRequest(context, request).blockingGet();
 
-    // Should cache system instruction + 2 history events (before last user batch)
-    verify(mockCacheManager).handleContextCaching(any(LlmRequest.class), eq(3));
+    verify(mockCacheManager).handleContextCaching(any(LlmRequest.class), eq(2));
   }
 
   @Test
-  public void processRequest_allUserEvents_cachesSystemInstructionOnly() {
+  public void processRequest_allUserEvents_returnsZeroContentsCount() {
     ContextCacheConfig cacheConfig = ContextCacheConfig.builder().build();
     LlmAgent agent = createAgentWithCaching();
 
@@ -613,9 +609,9 @@ public class ContextCacheProcessorTest {
             createEvent("e3", "inv1", "user", null));
 
     CacheMetadata mockMetadata =
-        CacheMetadata.builder().fingerprint("fingerprint").contentsCount(1).build();
+        CacheMetadata.builder().fingerprint("fingerprint").contentsCount(0).build();
 
-    when(mockCacheManager.handleContextCaching(any(LlmRequest.class), eq(1)))
+    when(mockCacheManager.handleContextCaching(any(LlmRequest.class), eq(0)))
         .thenReturn(Single.just(mockMetadata));
 
     RunConfig runConfig = RunConfig.builder().setContextCacheConfig(cacheConfig).build();
@@ -624,7 +620,7 @@ public class ContextCacheProcessorTest {
 
     RequestProcessingResult result = processor.processRequest(context, request).blockingGet();
 
-    verify(mockCacheManager).handleContextCaching(any(LlmRequest.class), eq(1));
+    verify(mockCacheManager).handleContextCaching(any(LlmRequest.class), eq(0));
   }
 
   @Test
@@ -638,12 +634,10 @@ public class ContextCacheProcessorTest {
             createEvent("e2", "inv1", TEST_AGENT_NAME, null),
             createEvent("e3", "inv1", TEST_AGENT_NAME, null));
 
-    // No user events, so last user batch starts at end (index 3)
-    // Cacheable: system (1) + all history (3) = 4
     CacheMetadata mockMetadata =
-        CacheMetadata.builder().fingerprint("fingerprint").contentsCount(4).build();
+        CacheMetadata.builder().fingerprint("fingerprint").contentsCount(3).build();
 
-    when(mockCacheManager.handleContextCaching(any(LlmRequest.class), eq(4)))
+    when(mockCacheManager.handleContextCaching(any(LlmRequest.class), eq(3)))
         .thenReturn(Single.just(mockMetadata));
 
     RunConfig runConfig = RunConfig.builder().setContextCacheConfig(cacheConfig).build();
@@ -652,7 +646,7 @@ public class ContextCacheProcessorTest {
 
     RequestProcessingResult result = processor.processRequest(context, request).blockingGet();
 
-    verify(mockCacheManager).handleContextCaching(any(LlmRequest.class), eq(4));
+    verify(mockCacheManager).handleContextCaching(any(LlmRequest.class), eq(3));
   }
 
   @Test
@@ -660,22 +654,19 @@ public class ContextCacheProcessorTest {
     ContextCacheConfig cacheConfig = ContextCacheConfig.builder().build();
     LlmAgent agent = createAgentWithCaching();
 
-    // Pattern: agent, user, agent, agent, user, user (cache first 4 + system)
     List<Event> events =
         ImmutableList.of(
             createEvent("e1", "inv1", TEST_AGENT_NAME, null),
             createEvent("e2", "inv1", "user", null),
             createEvent("e3", "inv2", TEST_AGENT_NAME, null),
             createEvent("e4", "inv2", TEST_AGENT_NAME, null),
-            createEvent("e5", "inv3", "user", null), // Last user batch starts here at index 4
+            createEvent("e5", "inv3", "user", null),
             createEvent("e6", "inv3", "user", null));
 
-    // Last user batch starts at index 4
-    // Cacheable: system (1) + history before batch (4) = 5
     CacheMetadata mockMetadata =
-        CacheMetadata.builder().fingerprint("fingerprint").contentsCount(5).build();
+        CacheMetadata.builder().fingerprint("fingerprint").contentsCount(4).build();
 
-    when(mockCacheManager.handleContextCaching(any(LlmRequest.class), eq(5)))
+    when(mockCacheManager.handleContextCaching(any(LlmRequest.class), eq(4)))
         .thenReturn(Single.just(mockMetadata));
 
     RunConfig runConfig = RunConfig.builder().setContextCacheConfig(cacheConfig).build();
@@ -684,7 +675,7 @@ public class ContextCacheProcessorTest {
 
     RequestProcessingResult result = processor.processRequest(context, request).blockingGet();
 
-    verify(mockCacheManager).handleContextCaching(any(LlmRequest.class), eq(5));
+    verify(mockCacheManager).handleContextCaching(any(LlmRequest.class), eq(4));
   }
 
   @Test
@@ -729,9 +720,9 @@ public class ContextCacheProcessorTest {
     LlmAgent agent = createAgentWithCaching();
 
     CacheMetadata mockMetadata =
-        CacheMetadata.builder().fingerprint("new-fingerprint").contentsCount(1).build();
+        CacheMetadata.builder().fingerprint("new-fingerprint").contentsCount(0).build();
 
-    when(mockCacheManager.handleContextCaching(any(LlmRequest.class), eq(1)))
+    when(mockCacheManager.handleContextCaching(any(LlmRequest.class), eq(0)))
         .thenReturn(Single.just(mockMetadata));
 
     RunConfig runConfig = RunConfig.builder().setContextCacheConfig(cacheConfig).build();
@@ -740,7 +731,7 @@ public class ContextCacheProcessorTest {
 
     processor.processRequest(context, request).blockingGet();
 
-    verify(mockCacheManager).handleContextCaching(any(LlmRequest.class), eq(1));
+    verify(mockCacheManager).handleContextCaching(any(LlmRequest.class), eq(0));
   }
 
   @Test
@@ -751,12 +742,10 @@ public class ContextCacheProcessorTest {
     Event eventWithoutMetadata =
         Event.builder().id("no-metadata").invocationId("inv1").author(TEST_AGENT_NAME).build();
 
-    // Event without metadata - no user events, so batch starts at end (index 1)
-    // Cacheable: system (1) + history (1 event) = 2
     CacheMetadata mockMetadata =
-        CacheMetadata.builder().fingerprint("fingerprint").contentsCount(2).build();
+        CacheMetadata.builder().fingerprint("fingerprint").contentsCount(1).build();
 
-    when(mockCacheManager.handleContextCaching(any(LlmRequest.class), eq(2)))
+    when(mockCacheManager.handleContextCaching(any(LlmRequest.class), eq(1)))
         .thenReturn(Single.just(mockMetadata));
 
     RunConfig runConfig = RunConfig.builder().setContextCacheConfig(cacheConfig).build();
@@ -766,8 +755,7 @@ public class ContextCacheProcessorTest {
 
     processor.processRequest(context, request).blockingGet();
 
-    // Should not find any cache metadata from events, but still calculates contents count
-    verify(mockCacheManager).handleContextCaching(any(LlmRequest.class), eq(2));
+    verify(mockCacheManager).handleContextCaching(any(LlmRequest.class), eq(1));
   }
 
   @Test
@@ -859,7 +847,7 @@ public class ContextCacheProcessorTest {
   }
 
   @Test
-  public void processRequest_singleUserEventAtEnd_cachesSystemAndHistory() {
+  public void processRequest_singleUserEventAtEnd_cachesHistory() {
     ContextCacheConfig cacheConfig = ContextCacheConfig.builder().build();
     LlmAgent agent = createAgentWithCaching();
 
@@ -867,14 +855,12 @@ public class ContextCacheProcessorTest {
         ImmutableList.of(
             createEvent("e1", "inv1", TEST_AGENT_NAME, null),
             createEvent("e2", "inv1", TEST_AGENT_NAME, null),
-            createEvent("e3", "inv2", "user", null)); // Single user at end
+            createEvent("e3", "inv2", "user", null));
 
-    // Last user batch starts at index 2
-    // Cacheable: system (1) + history before batch (2) = 3
     CacheMetadata mockMetadata =
-        CacheMetadata.builder().fingerprint("fingerprint").contentsCount(3).build();
+        CacheMetadata.builder().fingerprint("fingerprint").contentsCount(2).build();
 
-    when(mockCacheManager.handleContextCaching(any(LlmRequest.class), eq(3)))
+    when(mockCacheManager.handleContextCaching(any(LlmRequest.class), eq(2)))
         .thenReturn(Single.just(mockMetadata));
 
     RunConfig runConfig = RunConfig.builder().setContextCacheConfig(cacheConfig).build();
@@ -883,22 +869,20 @@ public class ContextCacheProcessorTest {
 
     processor.processRequest(context, request).blockingGet();
 
-    verify(mockCacheManager).handleContextCaching(any(LlmRequest.class), eq(3));
+    verify(mockCacheManager).handleContextCaching(any(LlmRequest.class), eq(2));
   }
 
   @Test
-  public void processRequest_onlyOneUserEvent_cachesSystemInstructionOnly() {
+  public void processRequest_onlyOneUserEvent_returnsZeroContentsCount() {
     ContextCacheConfig cacheConfig = ContextCacheConfig.builder().build();
     LlmAgent agent = createAgentWithCaching();
 
     List<Event> singleUserEvent = ImmutableList.of(createEvent("e1", "inv1", "user", null));
 
-    // Last user batch starts at index 0
-    // Cacheable: system (1) + history before batch (0) = 1
     CacheMetadata mockMetadata =
-        CacheMetadata.builder().fingerprint("fingerprint").contentsCount(1).build();
+        CacheMetadata.builder().fingerprint("fingerprint").contentsCount(0).build();
 
-    when(mockCacheManager.handleContextCaching(any(LlmRequest.class), eq(1)))
+    when(mockCacheManager.handleContextCaching(any(LlmRequest.class), eq(0)))
         .thenReturn(Single.just(mockMetadata));
 
     RunConfig runConfig = RunConfig.builder().setContextCacheConfig(cacheConfig).build();
@@ -907,7 +891,7 @@ public class ContextCacheProcessorTest {
 
     processor.processRequest(context, request).blockingGet();
 
-    verify(mockCacheManager).handleContextCaching(any(LlmRequest.class), eq(1));
+    verify(mockCacheManager).handleContextCaching(any(LlmRequest.class), eq(0));
   }
 
   // Helper methods
