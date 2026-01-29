@@ -50,10 +50,19 @@ public final class InputAudioTranscriptionTest {
       throws Exception {
     Method method =
         Runner.class.getDeclaredMethod(
-            "newInvocationContextForLive", Session.class, Optional.class, RunConfig.class);
+            "newInvocationContextForLive",
+            Session.class,
+            Optional.class,
+            RunConfig.class,
+            io.opentelemetry.context.Context.class);
     method.setAccessible(true);
     return (InvocationContext)
-        method.invoke(runner, session, Optional.of(liveRequestQueue), runConfig);
+        method.invoke(
+            runner,
+            session,
+            Optional.of(liveRequestQueue),
+            runConfig,
+            io.opentelemetry.context.Context.root());
   }
 
   @Test

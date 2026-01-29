@@ -239,12 +239,16 @@ public abstract class BaseAgent {
     Tracer tracer = Telemetry.getTracer();
     return Flowable.defer(
         () -> {
+          // Use the OTEL context from parentContext to ensure proper span parenting across
+          // async boundaries (e.g., RxJava schedulers). Context.current() would be incorrect
+          // here as it may point to a different context on the scheduler thread.
+          Context parentOtelContext = parentContext.otelContext();
           Span span =
               tracer
                   .spanBuilder("agent_run [" + name() + "]")
-                  .setParent(Context.current())
+                  .setParent(parentOtelContext)
                   .startSpan();
-          Context spanContext = Context.current().with(span);
+          Context spanContext = parentOtelContext.with(span);
 
           InvocationContext invocationContext = createInvocationContext(parentContext);
 
@@ -338,12 +342,13 @@ public abstract class BaseAgent {
     Tracer tracer = Telemetry.getTracer();
     return Flowable.defer(
         () -> {
+          Context parentOtelContext = parentContext.otelContext();
           Span span =
               tracer
                   .spanBuilder("agent_run [" + name() + "]")
-                  .setParent(Context.current())
+                  .setParent(parentOtelContext)
                   .startSpan();
-          Context spanContext = Context.current().with(span);
+          Context spanContext = parentOtelContext.with(span);
 
           InvocationContext invocationContext = createInvocationContext(parentContext);
 
