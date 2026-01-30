@@ -209,13 +209,14 @@ public abstract class BaseLlmFlow implements BaseFlow {
                       : LlmRegistry.getLlm(agent.resolvedModel().modelName().get());
               return Flowable.defer(
                       () -> {
+                        Context parentOtelContext = context.otelContext();
                         Span llmCallSpan =
                             Telemetry.getTracer()
                                 .spanBuilder("call_llm")
-                                .setParent(Context.current())
+                                .setParent(parentOtelContext)
                                 .startSpan();
-
-                        try (Scope scope = llmCallSpan.makeCurrent()) {
+                        Context spanContext = parentOtelContext.with(llmCallSpan);
+                        try (Scope scope = spanContext.makeCurrent()) {
                           return llm.generateContent(
                                   llmRequestBuilder.build(),
                                   context.runConfig().streamingMode() == StreamingMode.SSE)
@@ -444,12 +445,14 @@ public abstract class BaseLlmFlow implements BaseFlow {
                       ? Completable.complete()
                       : Completable.defer(
                           () -> {
+                            Context parentOtelContext = invocationContext.otelContext();
                             Span sendDataSpan =
                                 Telemetry.getTracer()
                                     .spanBuilder("send_data")
-                                    .setParent(Context.current())
+                                    .setParent(parentOtelContext)
                                     .startSpan();
-                            try (Scope scope = sendDataSpan.makeCurrent()) {
+                            Context spanContext = parentOtelContext.with(sendDataSpan);
+                            try (Scope scope = spanContext.makeCurrent()) {
                               return connection
                                   .sendHistory(llmRequestAfterPreprocess.contents())
                                   .doOnComplete(
