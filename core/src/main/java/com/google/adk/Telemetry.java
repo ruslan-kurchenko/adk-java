@@ -28,6 +28,10 @@ import com.google.common.collect.ImmutableList;
 import com.google.genai.types.Content;
 import com.google.genai.types.Part;
 import io.opentelemetry.api.GlobalOpenTelemetry;
+import io.opentelemetry.api.common.AttributeKey;
+import io.opentelemetry.api.common.Attributes;
+import io.opentelemetry.api.metrics.LongCounter;
+import io.opentelemetry.api.metrics.Meter;
 import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.api.trace.Tracer;
 import io.opentelemetry.context.Context;
@@ -44,21 +48,253 @@ import org.slf4j.LoggerFactory;
 /**
  * Utility class for capturing and reporting telemetry data within the ADK. This class provides
  * methods to trace various aspects of the agent's execution, including tool calls, tool responses,
- * LLM interactions, and data handling. It leverages OpenTelemetry for tracing and logging for
- * detailed information. These traces can then be exported through the ADK Dev Server UI.
+ * LLM interactions, and data handling. It leverages OpenTelemetry for tracing, metrics, and logging
+ * for detailed information. These traces and metrics can be exported to DataDog, Prometheus,
+ * Grafana, or other observability platforms via OTLP.
+ *
+ * <p>Metrics are recorded automatically during agent execution and exported via OpenTelemetry. To
+ * enable metric export, configure the OTEL_EXPORTER_OTLP_ENDPOINT environment variable to point to
+ * your collector (e.g., DataDog agent on localhost:4318).
  */
 public class Telemetry {
 
   private static final Logger log = LoggerFactory.getLogger(Telemetry.class);
+  private static final String INSTRUMENTATION_NAME = "gcp.vertex.agent";
 
   @SuppressWarnings("NonFinalStaticField")
-  private static Tracer tracer = GlobalOpenTelemetry.getTracer("gcp.vertex.agent");
+  private static Tracer tracer = GlobalOpenTelemetry.getTracer(INSTRUMENTATION_NAME);
+
+  private static final String METER_NAME = INSTRUMENTATION_NAME;
+  private static final String CACHE_METRIC_PREFIX = "adk.cache.";
+
+  private static final AttributeKey<String> AGENT_NAME_KEY = AttributeKey.stringKey("agent.name");
+  private static final AttributeKey<String> CACHE_NAME_KEY = AttributeKey.stringKey("cache.name");
+
+  private static volatile LongCounter cacheHitsCounter;
+  private static volatile LongCounter cacheMissesCounter;
+  private static volatile LongCounter cacheCreationsCounter;
+  private static volatile LongCounter cachedTokensSavedCounter;
+  private static volatile LongCounter cacheDeletionsCounter;
+  private static volatile LongCounter cacheFragmentationCounter;
+
+  private static LongCounter getCacheHitsCounter() {
+    if (cacheHitsCounter == null) {
+      synchronized (Telemetry.class) {
+        if (cacheHitsCounter == null) {
+          cacheHitsCounter = buildCacheCounter("hits", "Number of context cache hits", "1");
+        }
+      }
+    }
+    return cacheHitsCounter;
+  }
+
+  private static LongCounter getCacheMissesCounter() {
+    if (cacheMissesCounter == null) {
+      synchronized (Telemetry.class) {
+        if (cacheMissesCounter == null) {
+          cacheMissesCounter =
+              buildCacheCounter(
+                  "misses", "Number of context cache misses (new cache created)", "1");
+        }
+      }
+    }
+    return cacheMissesCounter;
+  }
+
+  private static LongCounter getCacheCreationsCounter() {
+    if (cacheCreationsCounter == null) {
+      synchronized (Telemetry.class) {
+        if (cacheCreationsCounter == null) {
+          cacheCreationsCounter =
+              buildCacheCounter("creations", "Number of context caches created", "1");
+        }
+      }
+    }
+    return cacheCreationsCounter;
+  }
+
+  private static LongCounter getCachedTokensSavedCounter() {
+    if (cachedTokensSavedCounter == null) {
+      synchronized (Telemetry.class) {
+        if (cachedTokensSavedCounter == null) {
+          cachedTokensSavedCounter =
+              buildCacheCounter(
+                  "tokens.saved", "Total tokens saved by using cached content", "tokens");
+        }
+      }
+    }
+    return cachedTokensSavedCounter;
+  }
+
+  private static LongCounter getCacheDeletionsCounter() {
+    if (cacheDeletionsCounter == null) {
+      synchronized (Telemetry.class) {
+        if (cacheDeletionsCounter == null) {
+          cacheDeletionsCounter =
+              buildCacheCounter(
+                  "deletions", "Number of context caches deleted (cleanup + expiration)", "1");
+        }
+      }
+    }
+    return cacheDeletionsCounter;
+  }
+
+  private static LongCounter getCacheFragmentationCounter() {
+    if (cacheFragmentationCounter == null) {
+      synchronized (Telemetry.class) {
+        if (cacheFragmentationCounter == null) {
+          cacheFragmentationCounter =
+              buildCacheCounter(
+                  "fragmentation.detected",
+                  "Number of duplicate cache detections (multi-pod race condition)",
+                  "1");
+        }
+      }
+    }
+    return cacheFragmentationCounter;
+  }
+
+  private static LongCounter buildCacheCounter(String name, String description, String unit) {
+    return GlobalOpenTelemetry.getMeter(METER_NAME)
+        .counterBuilder(CACHE_METRIC_PREFIX + name)
+        .setDescription(description)
+        .setUnit(unit)
+        .build();
+  }
 
   private Telemetry() {}
+
+  /**
+   * Record a cache hit event.
+   *
+   * <p>Called when an existing cache is successfully reused.
+   *
+   * @param agentName Name of the agent using the cache
+   * @param cacheName Cache resource name (e.g., "cachedContents/abc123")
+   */
+  public static void recordCacheHit(String agentName, String cacheName) {
+    recordCacheMetric(
+        getCacheHitsCounter(),
+        1,
+        Attributes.of(AGENT_NAME_KEY, agentName, CACHE_NAME_KEY, cacheName));
+  }
+
+  /**
+   * Record a cache miss event.
+   *
+   * <p>Called when no valid cache exists and a new cache will be created.
+   *
+   * @param agentName Name of the agent that missed the cache
+   */
+  public static void recordCacheMiss(String agentName) {
+    recordCacheMetric(getCacheMissesCounter(), 1, Attributes.of(AGENT_NAME_KEY, agentName));
+  }
+
+  /**
+   * Record cache creation.
+   *
+   * <p>Called when a new cache is successfully created via the Gemini Caching API.
+   *
+   * @param agentName Name of the agent for which the cache was created
+   * @param contentsCount Number of contents cached
+   */
+  public static void recordCacheCreation(String agentName, int contentsCount) {
+    recordCacheMetric(getCacheCreationsCounter(), 1, Attributes.of(AGENT_NAME_KEY, agentName));
+  }
+
+  /**
+   * Record tokens saved by using cached content.
+   *
+   * <p>Called when processing an LLM response that used cached content.
+   *
+   * @param agentName Name of the agent that saved tokens
+   * @param tokenCount Number of tokens served from cache
+   */
+  public static void recordCachedTokensSaved(String agentName, long tokenCount) {
+    recordCacheMetric(
+        getCachedTokensSavedCounter(), tokenCount, Attributes.of(AGENT_NAME_KEY, agentName));
+  }
+
+  /**
+   * Record cache deletion event.
+   *
+   * <p>Called when a cache is deleted via the Gemini API, either for cleanup (duplicates, invalid
+   * caches) or manual deletion.
+   *
+   * @param reason Reason for deletion (e.g., "duplicate-cleanup", "invalid", "manual")
+   * @param cacheName Cache resource name being deleted
+   */
+  public static void recordCacheDeletion(String reason, String cacheName) {
+    try {
+      getCacheDeletionsCounter()
+          .add(
+              1,
+              Attributes.of(
+                  AttributeKey.stringKey("deletion.reason"), reason, CACHE_NAME_KEY, cacheName));
+    } catch (Exception e) {
+      log.debug("Failed to record cache deletion metric", e);
+    }
+  }
+
+  /**
+   * Record cache fragmentation detection.
+   *
+   * <p>Called when duplicate caches are detected for the same agent, indicating a race condition
+   * occurred where multiple pods created caches simultaneously.
+   *
+   * @param agentName Name of the agent with duplicate caches
+   * @param duplicateCount Number of duplicate caches detected
+   */
+  public static void recordCacheFragmentation(String agentName, int duplicateCount) {
+    try {
+      getCacheFragmentationCounter()
+          .add(
+              1,
+              Attributes.of(
+                  AGENT_NAME_KEY,
+                  agentName,
+                  AttributeKey.longKey("duplicate.count"),
+                  (long) duplicateCount));
+    } catch (Exception e) {
+      log.debug("Failed to record cache fragmentation metric", e);
+    }
+  }
+
+  private static void recordCacheMetric(LongCounter counter, long value, Attributes attributes) {
+    try {
+      counter.add(value, attributes);
+    } catch (Exception e) {
+      log.debug("Failed to record cache metric", e);
+    }
+  }
+
+  /**
+   * Gets the OpenTelemetry Meter for custom metric recording.
+   *
+   * @return The Meter instance
+   */
+  public static Meter getMeter() {
+    return GlobalOpenTelemetry.getMeter(METER_NAME);
+  }
 
   /** Sets the OpenTelemetry instance to be used for tracing. This is for testing purposes only. */
   public static void setTracerForTesting(Tracer tracer) {
     Telemetry.tracer = tracer;
+  }
+
+  /**
+   * Resets metric counters for testing.
+   *
+   * <p>This method is package-private and should only be used in tests to reset the
+   * lazy-initialized metric counters after GlobalOpenTelemetry.resetForTest() is called.
+   */
+  static void resetMetricsForTest() {
+    synchronized (Telemetry.class) {
+      cacheHitsCounter = null;
+      cacheMissesCounter = null;
+      cacheCreationsCounter = null;
+      cachedTokensSavedCounter = null;
+    }
   }
 
   /**

@@ -18,6 +18,7 @@ package com.google.adk.events;
 
 import static com.google.common.truth.Truth.assertThat;
 
+import com.google.adk.models.cache.CacheMetadata;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
@@ -190,5 +191,96 @@ public final class EventTest {
     String json = EVENT.toJson();
     Event deserializedEvent = Event.fromJson(json);
     assertThat(deserializedEvent).isEqualTo(EVENT);
+  }
+
+  @Test
+  public void event_withCacheMetadata_storesAndRetrievesCorrectly() {
+    CacheMetadata cacheMetadata =
+        CacheMetadata.builder()
+            .cacheName("cachedContents/test123")
+            .expireTime(System.currentTimeMillis() / 1000 + 1800)
+            .fingerprint("abc123def456")
+            .contentsCount(10)
+            .createdAt(System.currentTimeMillis() / 1000)
+            .build();
+
+    Event event =
+        Event.builder()
+            .id("event_id")
+            .invocationId("invocation_id")
+            .author("agent")
+            .cacheMetadata(cacheMetadata)
+            .build();
+
+    assertThat(event.cacheMetadata()).hasValue(cacheMetadata);
+  }
+
+  @Test
+  public void event_withoutCacheMetadata_returnsEmpty() {
+    Event event =
+        Event.builder().id("event_id").invocationId("invocation_id").author("agent").build();
+
+    assertThat(event.cacheMetadata()).isEmpty();
+  }
+
+  @Test
+  public void event_cacheMetadata_serializesToJson() {
+    CacheMetadata cacheMetadata =
+        CacheMetadata.builder().fingerprint("fingerprint123").contentsCount(7).build();
+
+    Event event =
+        Event.builder()
+            .id("event_id")
+            .invocationId("invocation_id")
+            .author("agent")
+            .cacheMetadata(cacheMetadata)
+            .build();
+
+    String json = event.toJson();
+
+    assertThat(json).contains("\"cacheMetadata\":");
+    assertThat(json).contains("\"fingerprint\":\"fingerprint123\"");
+    assertThat(json).contains("\"contents_count\":7");
+  }
+
+  @Test
+  public void event_cacheMetadata_deserializesFromJson() {
+    String json =
+        "{"
+            + "\"id\":\"event_id\","
+            + "\"invocationId\":\"invocation_id\","
+            + "\"author\":\"agent\","
+            + "\"cacheMetadata\":{"
+            + "\"fingerprint\":\"test_fingerprint\","
+            + "\"contents_count\":15"
+            + "},"
+            + "\"actions\":{},"
+            + "\"timestamp\":1234567890"
+            + "}";
+
+    Event event = Event.fromJson(json);
+
+    assertThat(event.cacheMetadata()).isPresent();
+    assertThat(event.cacheMetadata().get().fingerprint()).isEqualTo("test_fingerprint");
+    assertThat(event.cacheMetadata().get().contentsCount()).isEqualTo(15);
+  }
+
+  @Test
+  public void event_toBuilder_preservesCacheMetadata() {
+    CacheMetadata cacheMetadata =
+        CacheMetadata.builder().fingerprint("preserved123").contentsCount(5).build();
+
+    Event original =
+        Event.builder()
+            .id("original_id")
+            .invocationId("invocation_id")
+            .author("agent")
+            .cacheMetadata(cacheMetadata)
+            .build();
+
+    Event rebuilt = original.toBuilder().id("new_id").build();
+
+    assertThat(rebuilt.cacheMetadata()).hasValue(cacheMetadata);
+    assertThat(rebuilt.id()).isEqualTo("new_id");
   }
 }

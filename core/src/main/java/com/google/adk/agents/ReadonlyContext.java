@@ -17,6 +17,7 @@
 package com.google.adk.agents;
 
 import com.google.adk.events.Event;
+import com.google.adk.sessions.Session;
 import com.google.genai.types.Content;
 import java.util.Collections;
 import java.util.List;
@@ -67,6 +68,20 @@ public class ReadonlyContext {
   /** Returns the session ID. */
   public String sessionId() {
     return invocationContext.session().id();
+  }
+
+  /**
+   * Returns the Session object from the current invocation context.
+   *
+   * <p>This is the same Session instance that the Agent Runner uses, ensuring that any
+   * modifications made to the session state are visible to the runner and will be persisted
+   * correctly. Use this method instead of re-fetching the session to avoid split-brain scenarios
+   * where changes are made to a different session instance and then overwritten.
+   *
+   * @return the Session object for the current invocation
+   */
+  public Session session() {
+    return invocationContext.session();
   }
 
   /**

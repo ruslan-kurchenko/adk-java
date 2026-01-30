@@ -31,6 +31,7 @@ import com.google.errorprone.annotations.CanIgnoreReturnValue;
 import com.google.errorprone.annotations.InlineMe;
 import com.google.genai.types.Content;
 import com.google.genai.types.FunctionCall;
+import io.opentelemetry.context.Context;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -54,6 +55,7 @@ public class InvocationContext {
   private final RunConfig runConfig;
   private final ResumabilityConfig resumabilityConfig;
   private final InvocationCostManager invocationCostManager;
+  private final Context otelContext;
 
   private Optional<String> branch;
   private BaseAgent agent;
@@ -75,6 +77,7 @@ public class InvocationContext {
     this.endInvocation = builder.endInvocation;
     this.resumabilityConfig = builder.resumabilityConfig;
     this.invocationCostManager = builder.invocationCostManager;
+    this.otelContext = builder.otelContext;
     this.combinedPlugin =
         Optional.ofNullable(builder.agent)
             .map(BaseAgent::getPlugin)
@@ -317,6 +320,19 @@ public class InvocationContext {
   }
 
   /**
+   * Returns the OpenTelemetry context for this invocation.
+   *
+   * <p>This context is used to propagate trace context across async boundaries, ensuring that spans
+   * created by agents and tools are properly parented to the invocation span, even when execution
+   * happens on different threads (e.g., RxJava schedulers).
+   *
+   * @return the OpenTelemetry context, or {@link Context#root()} if not explicitly set.
+   */
+  public Context otelContext() {
+    return otelContext;
+  }
+
+  /**
    * Returns whether this invocation should be ended, e.g., due to reaching a terminal state or
    * error.
    */
@@ -429,6 +445,7 @@ public class InvocationContext {
       this.endInvocation = context.endInvocation;
       this.resumabilityConfig = context.resumabilityConfig;
       this.invocationCostManager = context.invocationCostManager;
+      this.otelContext = context.otelContext;
     }
 
     private BaseSessionService sessionService;
@@ -446,6 +463,7 @@ public class InvocationContext {
     private boolean endInvocation = false;
     private ResumabilityConfig resumabilityConfig = new ResumabilityConfig();
     private InvocationCostManager invocationCostManager = new InvocationCostManager();
+    private Context otelContext = Context.root();
 
     /**
      * Sets the session service for managing session state.
@@ -645,6 +663,12 @@ public class InvocationContext {
       return this;
     }
 
+    @CanIgnoreReturnValue
+    public Builder otelContext(Context otelContext) {
+      this.otelContext = otelContext;
+      return this;
+    }
+
     /**
      * Builds the {@link InvocationContext} instance.
      *
@@ -678,7 +702,8 @@ public class InvocationContext {
         && Objects.equals(userContent, that.userContent)
         && Objects.equals(runConfig, that.runConfig)
         && Objects.equals(resumabilityConfig, that.resumabilityConfig)
-        && Objects.equals(invocationCostManager, that.invocationCostManager);
+        && Objects.equals(invocationCostManager, that.invocationCostManager)
+        && Objects.equals(otelContext, that.otelContext);
   }
 
   @Override
@@ -698,6 +723,7 @@ public class InvocationContext {
         runConfig,
         endInvocation,
         resumabilityConfig,
-        invocationCostManager);
+        invocationCostManager,
+        otelContext);
   }
 }

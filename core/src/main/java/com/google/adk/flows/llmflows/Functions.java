@@ -175,9 +175,11 @@ public final class Functions {
 
               if (events.size() > 1) {
                 Tracer tracer = Telemetry.getTracer();
+                Context parentOtelContext = invocationContext.otelContext();
                 Span mergedSpan =
-                    tracer.spanBuilder("tool_response").setParent(Context.current()).startSpan();
-                try (Scope scope = mergedSpan.makeCurrent()) {
+                    tracer.spanBuilder("tool_response").setParent(parentOtelContext).startSpan();
+                Context spanContext = parentOtelContext.with(mergedSpan);
+                try (Scope scope = spanContext.makeCurrent()) {
                   Telemetry.traceToolResponse(invocationContext, mergedEvent.id(), mergedEvent);
                 } finally {
                   mergedSpan.end();
@@ -473,12 +475,17 @@ public final class Functions {
     Tracer tracer = Telemetry.getTracer();
     return Maybe.defer(
         () -> {
+          // Use the OTEL context from invocationContext to ensure proper span parenting across
+          // async boundaries (e.g., RxJava schedulers). Context.current() would be incorrect
+          // here as it may point to a different context on the scheduler thread.
+          Context parentOtelContext = toolContext.invocationContext().otelContext();
           Span span =
               tracer
                   .spanBuilder("tool_call [" + tool.name() + "]")
-                  .setParent(Context.current())
+                  .setParent(parentOtelContext)
                   .startSpan();
-          try (Scope scope = span.makeCurrent()) {
+          Context spanContext = parentOtelContext.with(span);
+          try (Scope scope = spanContext.makeCurrent()) {
             Telemetry.traceToolCall(args);
             return tool.runAsync(args, toolContext)
                 .toMaybe()
@@ -498,12 +505,14 @@ public final class Functions {
       ToolContext toolContext,
       InvocationContext invocationContext) {
     Tracer tracer = Telemetry.getTracer();
+    Context parentOtelContext = invocationContext.otelContext();
     Span span =
         tracer
             .spanBuilder("tool_response [" + tool.name() + "]")
-            .setParent(Context.current())
+            .setParent(parentOtelContext)
             .startSpan();
-    try (Scope scope = span.makeCurrent()) {
+    Context spanContext = parentOtelContext.with(span);
+    try (Scope scope = spanContext.makeCurrent()) {
       // use a empty placeholder response if tool response is null.
       if (response == null) {
         response = new HashMap<>();
