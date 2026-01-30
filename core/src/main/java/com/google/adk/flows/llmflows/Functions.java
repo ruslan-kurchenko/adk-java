@@ -486,7 +486,7 @@ public final class Functions {
                   .startSpan();
           Context spanContext = parentOtelContext.with(span);
           try (Scope scope = spanContext.makeCurrent()) {
-            Telemetry.traceToolCall(args);
+            Telemetry.traceToolCall(toolContext.invocationContext(), args);
             return tool.runAsync(args, toolContext)
                 .toMaybe()
                 .doOnError(span::recordException)

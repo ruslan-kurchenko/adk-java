@@ -300,9 +300,10 @@ public class Telemetry {
   /**
    * Traces tool call arguments.
    *
+   * @param invocationContext The invocation context for the current agent run.
    * @param args The arguments to the tool call.
    */
-  public static void traceToolCall(Map<String, Object> args) {
+  public static void traceToolCall(InvocationContext invocationContext, Map<String, Object> args) {
     Span span = Span.current();
     if (span == null || !span.getSpanContext().isValid()) {
       log.trace("traceToolCall: No valid span in current context.");
@@ -310,6 +311,10 @@ public class Telemetry {
     }
 
     span.setAttribute("gen_ai.system", "gcp.vertex.agent");
+    span.setAttribute("gcp.vertex.agent.invocation_id", invocationContext.invocationId());
+    if (invocationContext.session() != null && invocationContext.session().id() != null) {
+      span.setAttribute("gcp.vertex.agent.session_id", invocationContext.session().id());
+    }
     try {
       span.setAttribute(
           "gcp.vertex.agent.tool_call_args", JsonBaseModel.getMapper().writeValueAsString(args));

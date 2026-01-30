@@ -250,7 +250,10 @@ public abstract class BaseAgent {
                   .startSpan();
           Context spanContext = parentOtelContext.with(span);
 
-          InvocationContext invocationContext = createInvocationContext(parentContext);
+          // Propagate spanContext to invocationContext so child spans (tool_call, call_llm)
+          // are nested under agent_run instead of being siblings
+          InvocationContext invocationContext =
+              createInvocationContext(parentContext).toBuilder().otelContext(spanContext).build();
 
           return Telemetry.traceFlowable(
               spanContext,
