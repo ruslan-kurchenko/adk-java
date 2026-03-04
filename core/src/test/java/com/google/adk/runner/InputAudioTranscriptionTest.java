@@ -32,6 +32,7 @@ import com.google.genai.types.AudioTranscriptionConfig;
 import com.google.genai.types.Content;
 import com.google.genai.types.Modality;
 import com.google.genai.types.Part;
+import io.opentelemetry.context.Context;
 import java.lang.reflect.Method;
 import java.util.Optional;
 import org.junit.Test;
@@ -50,10 +51,14 @@ public final class InputAudioTranscriptionTest {
       throws Exception {
     Method method =
         Runner.class.getDeclaredMethod(
-            "newInvocationContextForLive", Session.class, Optional.class, RunConfig.class);
+            "newInvocationContextForLive",
+            Session.class,
+            Optional.class,
+            RunConfig.class,
+            Context.class);
     method.setAccessible(true);
     return (InvocationContext)
-        method.invoke(runner, session, Optional.of(liveRequestQueue), runConfig);
+        method.invoke(runner, session, Optional.of(liveRequestQueue), runConfig, Context.root());
   }
 
   @Test
