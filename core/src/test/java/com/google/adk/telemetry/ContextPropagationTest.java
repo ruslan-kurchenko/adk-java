@@ -577,7 +577,10 @@ public class ContextPropagationTest {
     BaseAgent agent = new TestAgent();
     Span parentSpan = tracer.spanBuilder("parent").startSpan();
     try (Scope s = parentSpan.makeCurrent()) {
-      agent.runAsync(buildInvocationContext()).test().await().assertComplete();
+      // Explicit otelContext propagation: agent uses parentContext.otelContext() as span parent.
+      InvocationContext ctx =
+          buildInvocationContext().toBuilder().otelContext(Context.current()).build();
+      agent.runAsync(ctx).test().await().assertComplete();
     } finally {
       parentSpan.end();
     }

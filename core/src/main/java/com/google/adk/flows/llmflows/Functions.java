@@ -148,7 +148,7 @@ public final class Functions {
       }
     }
 
-    Context parentContext = Context.current();
+    Context parentContext = invocationContext.otelContext();
     Function<FunctionCall, Maybe<Event>> functionCallMapper =
         getFunctionCallMapper(invocationContext, tools, toolConfirmations, false, parentContext);
 
@@ -210,7 +210,7 @@ public final class Functions {
       }
     }
 
-    Context parentContext = Context.current();
+    Context parentContext = invocationContext.otelContext();
     Function<FunctionCall, Maybe<Event>> functionCallMapper =
         getFunctionCallMapper(invocationContext, tools, toolConfirmations, true, parentContext);
 

@@ -144,7 +144,7 @@ public abstract class BaseLlmFlow implements BaseFlow {
                   })
               .map(ResponseProcessingResult::updatedResponse);
     }
-    Context parentContext = Context.current();
+    Context parentContext = context.otelContext();
 
     return currentLlmResponse.flatMapPublisher(
         updatedResponse -> {
@@ -179,6 +179,7 @@ public abstract class BaseLlmFlow implements BaseFlow {
                   agent.resolvedModel().model().isPresent()
                       ? agent.resolvedModel().model().get()
                       : LlmRegistry.getLlm(agent.resolvedModel().modelName().get());
+              AtomicReference<Span> callLlmSpanRef = new AtomicReference<>();
               return llm.generateContent(
                       llmRequestBuilder.build(),
                       context.runConfig().streamingMode() == StreamingMode.SSE)
@@ -197,11 +198,15 @@ public abstract class BaseLlmFlow implements BaseFlow {
                               llmResp))
                   .doOnError(
                       error -> {
-                        Span span = Span.current();
-                        span.setStatus(StatusCode.ERROR, error.getMessage());
-                        span.recordException(error);
+                        Span span = callLlmSpanRef.get();
+                        if (span != null) {
+                          span.setStatus(StatusCode.ERROR, error.getMessage());
+                          span.recordException(error);
+                        }
                       })
-                  .compose(Tracing.trace("call_llm"))
+                  .compose(
+                      Tracing.<LlmResponse>trace("call_llm", context.otelContext())
+                          .configure(callLlmSpanRef::set))
                   .concatMap(
                       llmResp ->
                           handleAfterModelCallback(context, llmResp, eventForCallbackUsage)
@@ -328,7 +333,7 @@ public abstract class BaseLlmFlow implements BaseFlow {
 
     return Flowable.defer(
         () -> {
-          Context currentContext = Context.current();
+          Context currentContext = context.otelContext();
           return preprocess(context, llmRequestRef)
               .concatWith(
                   Flowable.defer(
@@ -457,6 +462,7 @@ public abstract class BaseLlmFlow implements BaseFlow {
                 return Flowable.empty();
               }
 
+              AtomicReference<Span> sendDataSpanRef = new AtomicReference<>();
               String eventIdForSendData = Event.generateEventId();
               LlmAgent agent = (LlmAgent) invocationContext.agent();
               BaseLlm llm =
@@ -477,15 +483,19 @@ public abstract class BaseLlmFlow implements BaseFlow {
                                       llmRequestAfterPreprocess.contents()))
                           .doOnError(
                               error -> {
-                                Span span = Span.current();
-                                span.setStatus(StatusCode.ERROR, error.getMessage());
-                                span.recordException(error);
+                                Span span = sendDataSpanRef.get();
+                                if (span != null) {
+                                  span.setStatus(StatusCode.ERROR, error.getMessage());
+                                  span.recordException(error);
+                                }
                                 Tracing.traceSendData(
                                     invocationContext,
                                     eventIdForSendData,
                                     llmRequestAfterPreprocess.contents());
                               })
-                          .compose(Tracing.trace("send_data"));
+                          .compose(
+                              Tracing.trace("send_data", invocationContext.otelContext())
+                                  .configure(sendDataSpanRef::set));
 
               Flowable<LiveRequest> liveRequests =
                   invocationContext

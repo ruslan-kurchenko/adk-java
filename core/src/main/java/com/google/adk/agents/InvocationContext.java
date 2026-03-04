@@ -29,6 +29,7 @@ import com.google.adk.summarizer.EventsCompactionConfig;
 import com.google.errorprone.annotations.CanIgnoreReturnValue;
 import com.google.errorprone.annotations.InlineMe;
 import com.google.genai.types.Content;
+import io.opentelemetry.context.Context;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -53,6 +54,7 @@ public class InvocationContext {
   @Nullable private final ContextCacheConfig contextCacheConfig;
   private final InvocationCostManager invocationCostManager;
   private final Map<String, Object> callbackContextData;
+  private final Context otelContext;
 
   @Nullable private String branch;
   private BaseAgent agent;
@@ -76,6 +78,7 @@ public class InvocationContext {
     this.contextCacheConfig = builder.contextCacheConfig;
     this.invocationCostManager = builder.invocationCostManager;
     this.callbackContextData = new ConcurrentHashMap<>(builder.callbackContextData);
+    this.otelContext = builder.otelContext;
   }
 
   /**
@@ -308,6 +311,17 @@ public class InvocationContext {
   }
 
   /**
+   * Returns the OpenTelemetry {@link Context} for this invocation.
+   *
+   * <p>This context is used to propagate trace context across async boundaries (e.g., RxJava
+   * scheduler threads) without relying on {@code Context.current()}, which is thread-local and
+   * unreliable in async execution models.
+   */
+  public Context otelContext() {
+    return otelContext;
+  }
+
+  /**
    * Returns whether this invocation should be ended, e.g., due to reaching a terminal state or
    * error.
    */
@@ -410,6 +424,7 @@ public class InvocationContext {
       this.contextCacheConfig = context.contextCacheConfig;
       this.invocationCostManager = context.invocationCostManager;
       this.callbackContextData = new ConcurrentHashMap<>(context.callbackContextData);
+      this.otelContext = context.otelContext;
     }
 
     private BaseSessionService sessionService;
@@ -429,6 +444,7 @@ public class InvocationContext {
     @Nullable private ContextCacheConfig contextCacheConfig;
     private InvocationCostManager invocationCostManager = new InvocationCostManager();
     private Map<String, Object> callbackContextData = new ConcurrentHashMap<>();
+    private Context otelContext = Context.root();
 
     /**
      * Sets the session service for managing session state.
@@ -651,6 +667,18 @@ public class InvocationContext {
     }
 
     /**
+     * Sets the OpenTelemetry context for explicit trace propagation across async boundaries.
+     *
+     * @param otelContext the OpenTelemetry context to propagate.
+     * @return this builder instance for chaining.
+     */
+    @CanIgnoreReturnValue
+    public Builder otelContext(Context otelContext) {
+      this.otelContext = otelContext;
+      return this;
+    }
+
+    /**
      * Builds the {@link InvocationContext} instance.
      *
      * @throws IllegalStateException if any required parameters are missing.
@@ -706,7 +734,8 @@ public class InvocationContext {
         && Objects.equals(eventsCompactionConfig, that.eventsCompactionConfig)
         && Objects.equals(contextCacheConfig, that.contextCacheConfig)
         && Objects.equals(invocationCostManager, that.invocationCostManager)
-        && Objects.equals(callbackContextData, that.callbackContextData);
+        && Objects.equals(callbackContextData, that.callbackContextData)
+        && Objects.equals(otelContext, that.otelContext);
   }
 
   @Override
@@ -728,6 +757,7 @@ public class InvocationContext {
         eventsCompactionConfig,
         contextCacheConfig,
         invocationCostManager,
-        callbackContextData);
+        callbackContextData,
+        otelContext);
   }
 }

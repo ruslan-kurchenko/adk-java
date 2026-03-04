@@ -29,6 +29,8 @@ import com.google.common.collect.ImmutableList;
 import com.google.errorprone.annotations.CanIgnoreReturnValue;
 import com.google.errorprone.annotations.DoNotCall;
 import com.google.genai.types.Content;
+import io.opentelemetry.api.trace.Span;
+import io.opentelemetry.context.Context;
 import io.reactivex.rxjava3.core.Completable;
 import io.reactivex.rxjava3.core.Flowable;
 import io.reactivex.rxjava3.core.Maybe;
@@ -279,11 +281,14 @@ public abstract class BaseAgent {
    * instance.
    *
    * @param parentContext Parent context to copy.
+   * @param otelContext The OpenTelemetry context to set on the new invocation context.
    * @return new context with updated branch name.
    */
-  private InvocationContext createInvocationContext(InvocationContext parentContext) {
+  private InvocationContext createInvocationContext(
+      InvocationContext parentContext, Context otelContext) {
     InvocationContext.Builder builder = parentContext.toBuilder();
     builder.agent(this);
+    builder.otelContext(otelContext);
     // Check for branch to be truthy (not None, not empty string),
     parentContext
         .branch()
@@ -314,35 +319,60 @@ public abstract class BaseAgent {
       Function<InvocationContext, Flowable<Event>> runImplementation) {
     return Flowable.defer(
         () -> {
-          InvocationContext invocationContext = createInvocationContext(parentContext);
+          // Create the agent span explicitly with the parent's otelContext as parent,
+          // avoiding Context.current() which is unreliable on reused RxJava scheduler threads.
+          Context parentOtelContext = parentContext.otelContext();
+          Span agentSpan =
+              Tracing.getTracer()
+                  .spanBuilder("invoke_agent " + name())
+                  .setParent(parentOtelContext)
+                  .startSpan();
+          Context agentOtelContext = parentOtelContext.with(agentSpan);
 
-          return callCallback(
-                  beforeCallbacksToFunctions(
-                      invocationContext.pluginManager(), beforeAgentCallback),
-                  invocationContext)
-              .flatMapPublisher(
-                  beforeEventOpt -> {
-                    if (invocationContext.endInvocation()) {
-                      return Flowable.fromOptional(beforeEventOpt);
-                    }
+          try {
+            InvocationContext invocationContext =
+                createInvocationContext(parentContext, agentOtelContext);
+            Tracing.traceAgentInvocation(agentSpan, name(), description(), invocationContext);
 
-                    Flowable<Event> beforeEvents = Flowable.fromOptional(beforeEventOpt);
-                    Flowable<Event> mainEvents =
-                        Flowable.defer(() -> runImplementation.apply(invocationContext));
-                    Flowable<Event> afterEvents =
-                        Flowable.defer(
-                            () ->
-                                callCallback(
-                                        afterCallbacksToFunctions(
-                                            invocationContext.pluginManager(), afterAgentCallback),
-                                        invocationContext)
-                                    .flatMapPublisher(Flowable::fromOptional));
+            return callCallback(
+                    beforeCallbacksToFunctions(
+                        invocationContext.pluginManager(), beforeAgentCallback),
+                    invocationContext)
+                .flatMapPublisher(
+                    beforeEventOpt -> {
+                      if (invocationContext.endInvocation()) {
+                        return Flowable.fromOptional(beforeEventOpt);
+                      }
 
-                    return Flowable.concat(beforeEvents, mainEvents, afterEvents);
-                  })
-              .compose(
-                  Tracing.traceAgent(
-                      "invoke_agent " + name(), name(), description(), invocationContext));
+                      Flowable<Event> beforeEvents = Flowable.fromOptional(beforeEventOpt);
+                      Flowable<Event> mainEvents =
+                          Flowable.defer(() -> runImplementation.apply(invocationContext));
+                      Flowable<Event> afterEvents =
+                          Flowable.defer(
+                              () ->
+                                  callCallback(
+                                          afterCallbacksToFunctions(
+                                              invocationContext.pluginManager(),
+                                              afterAgentCallback),
+                                          invocationContext)
+                                      .flatMapPublisher(Flowable::fromOptional));
+
+                      return Flowable.concat(beforeEvents, mainEvents, afterEvents);
+                    })
+                .doOnError(
+                    throwable -> {
+                      agentSpan.setStatus(
+                          io.opentelemetry.api.trace.StatusCode.ERROR, throwable.getMessage());
+                      agentSpan.recordException(throwable);
+                    })
+                .doFinally(agentSpan::end);
+          } catch (Throwable t) {
+            agentSpan.setStatus(
+                io.opentelemetry.api.trace.StatusCode.ERROR, "Setup failure in agent run");
+            agentSpan.recordException(t);
+            agentSpan.end();
+            throw t;
+          }
         });
   }
 
