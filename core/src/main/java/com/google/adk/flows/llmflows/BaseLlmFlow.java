@@ -533,7 +533,7 @@ public abstract class BaseLlmFlow implements BaseFlow {
               Flowable<Event> receiveFlow =
                   connection
                       .receive()
-                      .flatMap(
+                      .concatMap(
                           llmResponse -> {
                             Event baseEventForThisLlmResponse =
                                 liveEventBuilderTemplate.id(Event.generateEventId()).build();
@@ -543,7 +543,7 @@ public abstract class BaseLlmFlow implements BaseFlow {
                                 llmRequestAfterPreprocess,
                                 llmResponse);
                           })
-                      .flatMap(
+                      .concatMap(
                           event -> {
                             Flowable<Event> events = Flowable.just(event);
                             if (event.actions().transferToAgent().isPresent()) {
