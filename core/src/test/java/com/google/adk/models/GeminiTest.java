@@ -22,6 +22,7 @@ import com.google.genai.types.Candidate;
 import com.google.genai.types.Content;
 import com.google.genai.types.FinishReason;
 import com.google.genai.types.GenerateContentResponse;
+import com.google.genai.types.GenerateContentResponseUsageMetadata;
 import com.google.genai.types.Part;
 import io.reactivex.rxjava3.core.Flowable;
 import io.reactivex.rxjava3.functions.Predicate;
@@ -121,6 +122,24 @@ public final class GeminiTest {
         isPartialTextResponse("Thinking..."),
         isFinalTextResponse("Thinking..."),
         isEmptyResponse());
+  }
+
+  @Test
+  public void shouldEmitStreamingResponse_usageOnlyWithCachedTokenCount_returnsTrue() {
+    LlmResponse usageOnlyResponse =
+        LlmResponse.builder()
+            .usageMetadata(
+                GenerateContentResponseUsageMetadata.builder().cachedContentTokenCount(5).build())
+            .build();
+
+    assertThat(Gemini.shouldEmitStreamingResponse(usageOnlyResponse)).isTrue();
+  }
+
+  @Test
+  public void shouldEmitStreamingResponse_emptyWithoutUsage_returnsFalse() {
+    LlmResponse emptyResponse = LlmResponse.builder().build();
+
+    assertThat(Gemini.shouldEmitStreamingResponse(emptyResponse)).isFalse();
   }
 
   // Helper methods for assertions

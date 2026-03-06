@@ -22,6 +22,7 @@ import com.google.adk.JsonBaseModel;
 import com.google.adk.events.Event;
 import com.google.adk.events.EventActions;
 import com.google.adk.events.ToolConfirmation;
+import com.google.adk.models.cache.CacheMetadata;
 import com.google.common.base.Splitter;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Iterables;
@@ -76,6 +77,7 @@ final class SessionJsonConverter {
     putIfNotEmpty(metadataJson, "longRunningToolIds", event.longRunningToolIds());
     event.groundingMetadata().ifPresent(v -> metadataJson.put("groundingMetadata", v));
     event.usageMetadata().ifPresent(v -> metadataJson.put("usageMetadata", v));
+    event.cacheMetadata().ifPresent(v -> metadataJson.put("cacheMetadata", v));
     Map<String, Object> eventJson = new HashMap<>();
     eventJson.put("author", event.author());
     eventJson.put("invocationId", event.invocationId());
@@ -228,6 +230,11 @@ final class SessionJsonConverter {
         usageMetadata =
             objectMapper.convertValue(rawUsageMetadata, GenerateContentResponseUsageMetadata.class);
       }
+      CacheMetadata cacheMetadata = null;
+      Object rawCacheMetadata = eventMetadata.get("cacheMetadata");
+      if (rawCacheMetadata != null) {
+        cacheMetadata = objectMapper.convertValue(rawCacheMetadata, CacheMetadata.class);
+      }
 
       event =
           event.toBuilder()
@@ -239,6 +246,7 @@ final class SessionJsonConverter {
               .branch(Optional.ofNullable((String) eventMetadata.get("branch")))
               .groundingMetadata(groundingMetadata)
               .usageMetadata(usageMetadata)
+              .cacheMetadata(cacheMetadata)
               .longRunningToolIds(
                   longRunningToolIdsList != null ? new HashSet<>(longRunningToolIdsList) : null)
               .build();

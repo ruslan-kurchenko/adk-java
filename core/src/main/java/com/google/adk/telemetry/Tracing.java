@@ -32,6 +32,9 @@ import com.google.genai.types.FunctionResponse;
 import com.google.genai.types.Part;
 import io.opentelemetry.api.GlobalOpenTelemetry;
 import io.opentelemetry.api.common.AttributeKey;
+import io.opentelemetry.api.common.Attributes;
+import io.opentelemetry.api.metrics.LongCounter;
+import io.opentelemetry.api.metrics.Meter;
 import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.api.trace.Tracer;
 import io.opentelemetry.context.Context;
@@ -100,7 +103,6 @@ public class Tracing {
       AttributeKey.longKey("gen_ai.usage.input_tokens");
   private static final AttributeKey<Long> GEN_AI_USAGE_OUTPUT_TOKENS =
       AttributeKey.longKey("gen_ai.usage.output_tokens");
-
   private static final AttributeKey<String> ADK_TOOL_CALL_ARGS =
       AttributeKey.stringKey("gcp.vertex.agent.tool_call_args");
   private static final AttributeKey<String> ADK_LLM_REQUEST =
@@ -120,6 +122,19 @@ public class Tracing {
 
   @SuppressWarnings("NonFinalStaticField")
   private static Tracer tracer = GlobalOpenTelemetry.getTracer("gcp.vertex.agent");
+
+  private static final String METER_NAME = "gcp.vertex.agent";
+  private static final String CACHE_METRIC_PREFIX = "adk.cache.";
+
+  private static final AttributeKey<String> AGENT_NAME_KEY = AttributeKey.stringKey("agent.name");
+  private static final AttributeKey<String> CACHE_NAME_KEY = AttributeKey.stringKey("cache.name");
+
+  private static volatile LongCounter cacheHitsCounter;
+  private static volatile LongCounter cacheMissesCounter;
+  private static volatile LongCounter cacheCreationsCounter;
+  private static volatile LongCounter cachedTokensSavedCounter;
+  private static volatile LongCounter cacheDeletionsCounter;
+  private static volatile LongCounter cacheFragmentationCounter;
 
   private static final boolean CAPTURE_MESSAGE_CONTENT_IN_SPANS =
       Boolean.parseBoolean(
@@ -180,6 +195,161 @@ public class Tracing {
     Tracing.tracer = tracer;
   }
 
+  private static LongCounter getCacheHitsCounter() {
+    if (cacheHitsCounter == null) {
+      synchronized (Tracing.class) {
+        if (cacheHitsCounter == null) {
+          cacheHitsCounter = buildCacheCounter("hits", "Number of context cache hits", "1");
+        }
+      }
+    }
+    return cacheHitsCounter;
+  }
+
+  private static LongCounter getCacheMissesCounter() {
+    if (cacheMissesCounter == null) {
+      synchronized (Tracing.class) {
+        if (cacheMissesCounter == null) {
+          cacheMissesCounter =
+              buildCacheCounter(
+                  "misses", "Number of context cache misses (new cache created)", "1");
+        }
+      }
+    }
+    return cacheMissesCounter;
+  }
+
+  private static LongCounter getCacheCreationsCounter() {
+    if (cacheCreationsCounter == null) {
+      synchronized (Tracing.class) {
+        if (cacheCreationsCounter == null) {
+          cacheCreationsCounter =
+              buildCacheCounter("creations", "Number of context caches created", "1");
+        }
+      }
+    }
+    return cacheCreationsCounter;
+  }
+
+  private static LongCounter getCachedTokensSavedCounter() {
+    if (cachedTokensSavedCounter == null) {
+      synchronized (Tracing.class) {
+        if (cachedTokensSavedCounter == null) {
+          cachedTokensSavedCounter =
+              buildCacheCounter(
+                  "tokens.saved", "Total tokens saved by using cached content", "tokens");
+        }
+      }
+    }
+    return cachedTokensSavedCounter;
+  }
+
+  private static LongCounter getCacheDeletionsCounter() {
+    if (cacheDeletionsCounter == null) {
+      synchronized (Tracing.class) {
+        if (cacheDeletionsCounter == null) {
+          cacheDeletionsCounter =
+              buildCacheCounter(
+                  "deletions", "Number of context caches deleted (cleanup + expiration)", "1");
+        }
+      }
+    }
+    return cacheDeletionsCounter;
+  }
+
+  private static LongCounter getCacheFragmentationCounter() {
+    if (cacheFragmentationCounter == null) {
+      synchronized (Tracing.class) {
+        if (cacheFragmentationCounter == null) {
+          cacheFragmentationCounter =
+              buildCacheCounter(
+                  "fragmentation.detected",
+                  "Number of duplicate cache detections (multi-pod race condition)",
+                  "1");
+        }
+      }
+    }
+    return cacheFragmentationCounter;
+  }
+
+  private static LongCounter buildCacheCounter(String name, String description, String unit) {
+    return GlobalOpenTelemetry.getMeter(METER_NAME)
+        .counterBuilder(CACHE_METRIC_PREFIX + name)
+        .setDescription(description)
+        .setUnit(unit)
+        .build();
+  }
+
+  private static void recordCacheMetric(LongCounter counter, long value, Attributes attributes) {
+    try {
+      counter.add(value, attributes);
+    } catch (Exception e) {
+      log.debug("Failed to record cache metric", e);
+    }
+  }
+
+  public static void recordCacheHit(String agentName, String cacheName) {
+    recordCacheMetric(
+        getCacheHitsCounter(),
+        1,
+        Attributes.of(AGENT_NAME_KEY, agentName, CACHE_NAME_KEY, cacheName));
+  }
+
+  public static void recordCacheMiss(String agentName) {
+    recordCacheMetric(getCacheMissesCounter(), 1, Attributes.of(AGENT_NAME_KEY, agentName));
+  }
+
+  public static void recordCacheCreation(String agentName, int contentsCount) {
+    recordCacheMetric(getCacheCreationsCounter(), 1, Attributes.of(AGENT_NAME_KEY, agentName));
+  }
+
+  public static void recordCacheDeletion(String reason, String cacheName) {
+    try {
+      getCacheDeletionsCounter()
+          .add(
+              1,
+              Attributes.of(
+                  AttributeKey.stringKey("deletion.reason"), reason, CACHE_NAME_KEY, cacheName));
+    } catch (Exception e) {
+      log.debug("Failed to record cache deletion metric", e);
+    }
+  }
+
+  public static void recordCacheFragmentation(String agentName, int uniqueCacheCount) {
+    try {
+      getCacheFragmentationCounter()
+          .add(
+              1,
+              Attributes.of(
+                  AGENT_NAME_KEY,
+                  agentName,
+                  AttributeKey.longKey("duplicate.count"),
+                  (long) uniqueCacheCount));
+    } catch (Exception e) {
+      log.debug("Failed to record cache fragmentation metric", e);
+    }
+  }
+
+  public static void recordCachedTokensSaved(String agentName, long tokensSaved) {
+    recordCacheMetric(
+        getCachedTokensSavedCounter(), tokensSaved, Attributes.of(AGENT_NAME_KEY, agentName));
+  }
+
+  public static Meter getMeter() {
+    return GlobalOpenTelemetry.getMeter(METER_NAME);
+  }
+
+  static void resetMetricsForTest() {
+    synchronized (Tracing.class) {
+      cacheHitsCounter = null;
+      cacheMissesCounter = null;
+      cacheCreationsCounter = null;
+      cachedTokensSavedCounter = null;
+      cacheDeletionsCounter = null;
+      cacheFragmentationCounter = null;
+    }
+  }
+
   /**
    * Sets span attributes immediately available on agent invocation according to OTEL semconv
    * version 1.37.
@@ -205,11 +375,16 @@ public class Tracing {
    * @param args The arguments to the tool call.
    */
   public static void traceToolCall(
-      String toolName, String toolDescription, String toolType, Map<String, Object> args) {
+      InvocationContext invocationContext,
+      String toolName,
+      String toolDescription,
+      String toolType,
+      Map<String, Object> args) {
     getValidCurrentSpan("traceToolCall")
         .ifPresent(
             span -> {
               setToolExecutionAttributes(span);
+              setInvocationAttributes(span, invocationContext, null);
               span.setAttribute(GEN_AI_TOOL_NAME, toolName);
               span.setAttribute(GEN_AI_TOOL_DESCRIPTION, toolDescription);
               span.setAttribute(GEN_AI_TOOL_TYPE, toolType);

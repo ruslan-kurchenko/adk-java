@@ -21,6 +21,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 import com.fasterxml.jackson.databind.annotation.JsonPOJOBuilder;
 import com.google.adk.JsonBaseModel;
+import com.google.adk.models.cache.CacheMetadata;
 import com.google.auto.value.AutoValue;
 import com.google.errorprone.annotations.CanIgnoreReturnValue;
 import com.google.genai.types.Candidate;
@@ -115,6 +116,9 @@ public abstract class LlmResponse extends JsonBaseModel {
   @JsonProperty("modelVersion")
   public abstract Optional<String> modelVersion();
 
+  @JsonProperty("cacheMetadata")
+  public abstract Optional<CacheMetadata> cacheMetadata();
+
   public abstract Builder toBuilder();
 
   /** Builder for constructing {@link LlmResponse} instances. */
@@ -186,6 +190,13 @@ public abstract class LlmResponse extends JsonBaseModel {
     public abstract Builder modelVersion(@Nullable String modelVersion);
 
     public abstract Builder modelVersion(Optional<String> modelVersion);
+
+    @JsonProperty("cacheMetadata")
+    @CanIgnoreReturnValue
+    public abstract Builder cacheMetadata(@Nullable CacheMetadata cacheMetadata);
+
+    @CanIgnoreReturnValue
+    public abstract Builder cacheMetadata(Optional<CacheMetadata> cacheMetadata);
 
     @CanIgnoreReturnValue
     public final Builder response(GenerateContentResponse response) {

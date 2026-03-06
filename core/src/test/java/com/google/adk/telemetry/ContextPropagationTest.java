@@ -429,7 +429,11 @@ public class ContextPropagationTest {
     Span span = tracer.spanBuilder("test").startSpan();
     try (Scope scope = span.makeCurrent()) {
       Tracing.traceToolCall(
-          "tool-name", "tool-description", "tool-type", ImmutableMap.of("arg1", "value1"));
+          buildInvocationContext(),
+          "tool-name",
+          "tool-description",
+          "tool-type",
+          ImmutableMap.of("arg1", "value1"));
     } finally {
       span.end();
     }

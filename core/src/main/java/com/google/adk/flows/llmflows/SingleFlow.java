@@ -24,16 +24,9 @@ import java.util.Optional;
 public class SingleFlow extends BaseLlmFlow {
   // TODO: We should eventually remove this class since it complicates things.
 
+  @Deprecated
   protected static final ImmutableList<RequestProcessor> REQUEST_PROCESSORS =
-      ImmutableList.of(
-          new Basic(),
-          new RequestConfirmationLlmRequestProcessor(),
-          new Instructions(),
-          new Identity(),
-          new Compaction(),
-          new Contents(),
-          new Examples(),
-          CodeExecution.requestProcessor);
+      createRequestProcessors(false);
 
   protected static final ImmutableList<ResponseProcessor> RESPONSE_PROCESSORS =
       ImmutableList.of(CodeExecution.responseProcessor);
@@ -43,7 +36,29 @@ public class SingleFlow extends BaseLlmFlow {
   }
 
   public SingleFlow(Optional<Integer> maxSteps) {
-    this(REQUEST_PROCESSORS, RESPONSE_PROCESSORS, maxSteps);
+    this(createRequestProcessors(), RESPONSE_PROCESSORS, maxSteps);
+  }
+
+  protected static ImmutableList<RequestProcessor> createRequestProcessors() {
+    return createRequestProcessors(true);
+  }
+
+  private static ImmutableList<RequestProcessor> createRequestProcessors(
+      boolean includeContextCacheProcessor) {
+    ImmutableList.Builder<RequestProcessor> processors =
+        ImmutableList.<RequestProcessor>builder()
+            .add(new Basic())
+            .add(new RequestConfirmationLlmRequestProcessor())
+            .add(new Instructions())
+            .add(new Identity())
+            .add(new Compaction())
+            .add(new Contents());
+
+    if (includeContextCacheProcessor) {
+      processors.add(new ContextCacheProcessor());
+    }
+
+    return processors.add(new Examples()).add(CodeExecution.requestProcessor).build();
   }
 
   protected SingleFlow(

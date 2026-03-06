@@ -25,6 +25,7 @@ import com.google.common.collect.ImmutableList;
 import com.google.genai.types.GenerateContentConfig;
 import com.google.genai.types.Tool;
 import com.google.genai.types.ToolCodeExecution;
+import java.util.List;
 
 /**
  * A code executor that uses the Model's built-in code executor.
@@ -47,8 +48,14 @@ public class BuiltInCodeExecutor extends BaseCodeExecutor {
       GenerateContentConfig.Builder configBuilder =
           llmRequest.config().map(c -> c.toBuilder()).orElseGet(GenerateContentConfig::builder);
       ImmutableList.Builder<Tool> toolsBuilder = ImmutableList.<Tool>builder();
-      llmRequest.config().ifPresent(c -> c.tools().ifPresent(toolsBuilder::addAll));
-      toolsBuilder.add(Tool.builder().codeExecution(ToolCodeExecution.builder().build()).build());
+      List<Tool> existingTools =
+          llmRequest.config().flatMap(GenerateContentConfig::tools).orElse(ImmutableList.of());
+      boolean alreadyHasCodeExecution =
+          existingTools.stream().anyMatch(tool -> tool.codeExecution().isPresent());
+      toolsBuilder.addAll(existingTools);
+      if (!alreadyHasCodeExecution) {
+        toolsBuilder.add(Tool.builder().codeExecution(ToolCodeExecution.builder().build()).build());
+      }
       configBuilder.tools(toolsBuilder.build());
       llmRequestBuilder.config(configBuilder.build());
       return;
