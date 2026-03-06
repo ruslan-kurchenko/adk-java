@@ -17,6 +17,7 @@
 package com.google.adk.agents;
 
 import com.google.adk.events.Event;
+import com.google.adk.sessions.Session;
 import com.google.genai.types.Content;
 import java.util.Collections;
 import java.util.List;
@@ -39,7 +40,12 @@ public class ReadonlyContext {
     return invocationContext.userContent();
   }
 
-  /** Returns the invocation context. */
+  /**
+   * Returns the invocation context.
+   *
+   * <p><b>Note:</b> The returned context is mutable. Prefer using the specific accessor methods on
+   * this class (e.g., {@link #events()}, {@link #state()}) which provide unmodifiable views.
+   */
   public InvocationContext invocationContext() {
     return invocationContext;
   }
@@ -67,6 +73,19 @@ public class ReadonlyContext {
   /** Returns the session ID. */
   public String sessionId() {
     return invocationContext.session().id();
+  }
+
+  /**
+   * Returns the session object from the current invocation context.
+   *
+   * @deprecated This method exposes the mutable {@link Session} object, which is inconsistent with
+   *     the read-only contract of this class. Use {@link #events()}, {@link #state()}, {@link
+   *     #sessionId()}, or {@link #userId()} instead. If full session access is required, use {@link
+   *     #invocationContext()} explicitly.
+   */
+  @Deprecated
+  public Session session() {
+    return invocationContext.session();
   }
 
   /**

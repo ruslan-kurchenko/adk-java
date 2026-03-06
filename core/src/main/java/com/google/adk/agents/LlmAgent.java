@@ -92,6 +92,7 @@ public class LlmAgent extends BaseAgent {
   }
 
   private final Optional<Model> model;
+  private final Optional<Instruction> staticInstruction;
   private final Instruction instruction;
   private final Instruction globalInstruction;
   private final List<Object> toolsUnion;
@@ -128,6 +129,7 @@ public class LlmAgent extends BaseAgent {
         builder.beforeAgentCallback,
         builder.afterAgentCallback);
     this.model = Optional.ofNullable(builder.model);
+    this.staticInstruction = Optional.ofNullable(builder.staticInstruction);
     this.instruction = requireNonNullElse(builder.instruction, new Instruction.Static(""));
     this.globalInstruction =
         requireNonNullElse(builder.globalInstruction, new Instruction.Static(""));
@@ -176,6 +178,7 @@ public class LlmAgent extends BaseAgent {
   public static class Builder extends BaseAgent.Builder<Builder> {
     private Model model;
 
+    private Instruction staticInstruction;
     private Instruction instruction;
     private Instruction globalInstruction;
     private ImmutableList<Object> toolsUnion;
@@ -207,6 +210,19 @@ public class LlmAgent extends BaseAgent {
     @CanIgnoreReturnValue
     public Builder model(BaseLlm model) {
       this.model = Model.builder().model(model).build();
+      return this;
+    }
+
+    @CanIgnoreReturnValue
+    public Builder staticInstruction(Instruction staticInstruction) {
+      this.staticInstruction = staticInstruction;
+      return this;
+    }
+
+    @CanIgnoreReturnValue
+    public Builder staticInstruction(String staticInstruction) {
+      this.staticInstruction =
+          (staticInstruction == null) ? null : new Instruction.Static(staticInstruction);
       return this;
     }
 
@@ -798,6 +814,34 @@ public class LlmAgent extends BaseAgent {
 
   public Instruction instruction() {
     return instruction;
+  }
+
+  public Optional<Instruction> staticInstruction() {
+    return staticInstruction;
+  }
+
+  /**
+   * Constructs the text static instruction for this agent.
+   *
+   * <p>This method is only for use by Agent Development Kit.
+   *
+   * @param context The context to retrieve the session state.
+   * @return The resolved static instruction as a {@link Single} wrapped Map.Entry. The key is the
+   *     instruction string and the value is a boolean indicating if state injection should be
+   *     bypassed.
+   */
+  public Single<Map.Entry<String, Boolean>> canonicalStaticInstruction(ReadonlyContext context) {
+    if (staticInstruction.isEmpty()) {
+      return Single.just(Map.entry("", false));
+    }
+
+    Instruction instr = staticInstruction.get();
+    if (instr instanceof Instruction.Static staticInstr) {
+      return Single.just(Map.entry(staticInstr.instruction(), false));
+    } else if (instr instanceof Instruction.Provider provider) {
+      return provider.getInstruction().apply(context).map(text -> Map.entry(text, true));
+    }
+    throw new IllegalStateException("Unknown Instruction subtype: " + instr.getClass());
   }
 
   public Instruction globalInstruction() {

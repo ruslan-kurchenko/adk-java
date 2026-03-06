@@ -37,11 +37,13 @@ import com.google.adk.models.LlmCallsLimitExceededException;
 import com.google.adk.models.LlmRegistry;
 import com.google.adk.models.LlmRequest;
 import com.google.adk.models.LlmResponse;
+import com.google.adk.models.cache.CacheMetadata;
 import com.google.adk.telemetry.Tracing;
 import com.google.adk.tools.ToolContext;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Iterables;
 import com.google.genai.types.FunctionResponse;
+import com.google.genai.types.GenerateContentConfig;
 import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.api.trace.StatusCode;
 import io.opentelemetry.context.Context;
@@ -97,6 +99,26 @@ public abstract class BaseLlmFlow implements BaseFlow {
 
     RequestProcessor toolsProcessor =
         (ctx, req) -> {
+          boolean hasPreprocessedAgentTools = !req.tools().isEmpty();
+          boolean hasPreprocessedConfigTools =
+              req.config()
+                  .flatMap(GenerateContentConfig::tools)
+                  .map(tools -> !tools.isEmpty())
+                  .orElse(false);
+          boolean hasCodeExecutionTool =
+              req.config()
+                  .flatMap(GenerateContentConfig::tools)
+                  .map(tools -> tools.stream().anyMatch(tool -> tool.codeExecution().isPresent()))
+                  .orElse(false);
+          boolean skipToolProcessingForCachePath =
+              req.cacheMetadata().isPresent()
+                  && (hasPreprocessedAgentTools
+                      || hasPreprocessedConfigTools
+                      || hasCodeExecutionTool);
+          if (skipToolProcessingForCachePath) {
+            return Single.just(RequestProcessingResult.create(req, ImmutableList.of()));
+          }
+
           LlmRequest.Builder builder = req.toBuilder();
           return agent
               .canonicalTools(new ReadonlyContext(ctx))
@@ -130,6 +152,14 @@ public abstract class BaseLlmFlow implements BaseFlow {
       LlmRequest llmRequest,
       LlmResponse llmResponse) {
 
+    boolean isLiveMode = context.runConfig().streamingMode() == StreamingMode.BIDI;
+    if (!isLiveMode
+        && llmRequest.cacheMetadata().isPresent()
+        && llmResponse.cacheMetadata().isEmpty()
+        && shouldPropagateRequestCacheMetadata(llmRequest.cacheMetadata().get(), llmResponse)) {
+      llmResponse = llmResponse.toBuilder().cacheMetadata(llmRequest.cacheMetadata().get()).build();
+    }
+
     List<Iterable<Event>> eventIterables = new ArrayList<>();
     Single<LlmResponse> currentLlmResponse = Single.just(llmResponse);
     for (ResponseProcessor processor : responseProcessors) {
@@ -148,11 +178,44 @@ public abstract class BaseLlmFlow implements BaseFlow {
 
     return currentLlmResponse.flatMapPublisher(
         updatedResponse -> {
+          recordCachedTokensSaved(context, updatedResponse);
           try (Scope scope = parentContext.makeCurrent()) {
             return buildPostprocessingEvents(
                 updatedResponse, eventIterables, context, baseEventForLlmResponse, llmRequest);
           }
         });
+  }
+
+  private static boolean isCacheReuseConfirmed(LlmResponse llmResponse) {
+    return llmResponse
+        .usageMetadata()
+        .flatMap(usage -> usage.cachedContentTokenCount())
+        .map(tokenCount -> tokenCount > 0)
+        .orElse(false);
+  }
+
+  private static boolean shouldPropagateRequestCacheMetadata(
+      CacheMetadata requestCacheMetadata, LlmResponse llmResponse) {
+    if (!requestCacheMetadata.isActiveCache()) {
+      return true;
+    }
+    return isCacheReuseConfirmed(llmResponse);
+  }
+
+  private static void recordCachedTokensSaved(
+      InvocationContext context, LlmResponse updatedResponse) {
+    if (updatedResponse.usageMetadata().isPresent()) {
+      updatedResponse
+          .usageMetadata()
+          .get()
+          .cachedContentTokenCount()
+          .ifPresent(
+              tokenCount -> {
+                if (tokenCount > 0) {
+                  Tracing.recordCachedTokensSaved(context.agent().name(), tokenCount);
+                }
+              });
+    }
   }
 
   /**
@@ -550,7 +613,7 @@ public abstract class BaseLlmFlow implements BaseFlow {
               Flowable<Event> receiveFlow =
                   connection
                       .receive()
-                      .flatMap(
+                      .concatMap(
                           llmResponse -> {
                             Event baseEventForThisLlmResponse =
                                 liveEventBuilderTemplate.id(Event.generateEventId()).build();
@@ -560,7 +623,7 @@ public abstract class BaseLlmFlow implements BaseFlow {
                                 llmRequestAfterPreprocess,
                                 llmResponse);
                           })
-                      .flatMap(
+                      .concatMap(
                           event -> {
                             Flowable<Event> events = Flowable.just(event);
                             if (event.actions().transferToAgent().isPresent()) {
@@ -659,7 +722,8 @@ public abstract class BaseLlmFlow implements BaseFlow {
             .avgLogprobs(llmResponse.avgLogprobs())
             .finishReason(llmResponse.finishReason())
             .usageMetadata(llmResponse.usageMetadata())
-            .modelVersion(llmResponse.modelVersion());
+            .modelVersion(llmResponse.modelVersion())
+            .cacheMetadata(llmResponse.cacheMetadata());
 
     Event event = eventBuilder.build();
 

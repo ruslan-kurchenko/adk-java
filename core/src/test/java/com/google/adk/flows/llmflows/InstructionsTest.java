@@ -257,4 +257,69 @@ public final class InstructionsTest {
     assertThat(result.updatedRequest().getSystemInstructions())
         .containsExactly("Global instruction.\n\nAgent instruction.");
   }
+
+  @Test
+  public void processRequest_staticInstructionOnly_appendsStaticInstruction() {
+    LlmAgent agent =
+        LlmAgent.builder().name("agent").staticInstruction("Static cacheable instruction.").build();
+    InvocationContext context = createContext(agent, createSession());
+
+    RequestProcessor.RequestProcessingResult result =
+        instructionsProcessor.processRequest(context, initialRequest).blockingGet();
+
+    assertThat(result.updatedRequest().getSystemInstructions())
+        .containsExactly("Static cacheable instruction.");
+  }
+
+  @Test
+  public void processRequest_globalStaticAndDynamic_appendedInOrder() {
+    LlmAgent agent =
+        LlmAgent.builder()
+            .name("agent")
+            .globalInstruction("Global instruction.")
+            .staticInstruction("Static instruction.")
+            .instruction("Dynamic instruction.")
+            .build();
+    InvocationContext context = createContext(agent, createSession());
+
+    RequestProcessor.RequestProcessingResult result =
+        instructionsProcessor.processRequest(context, initialRequest).blockingGet();
+
+    // Order: global -> static -> dynamic, concatenated with \n\n separators
+    assertThat(result.updatedRequest().getSystemInstructions())
+        .containsExactly("Global instruction.\n\nStatic instruction.\n\nDynamic instruction.");
+  }
+
+  @Test
+  public void processRequest_staticAndDynamic_noGlobal_appendedInOrder() {
+    LlmAgent agent =
+        LlmAgent.builder()
+            .name("agent")
+            .staticInstruction("Static instruction.")
+            .instruction("Dynamic instruction.")
+            .build();
+    InvocationContext context = createContext(agent, createSession());
+
+    RequestProcessor.RequestProcessingResult result =
+        instructionsProcessor.processRequest(context, initialRequest).blockingGet();
+
+    assertThat(result.updatedRequest().getSystemInstructions())
+        .containsExactly("Static instruction.\n\nDynamic instruction.");
+  }
+
+  @Test
+  public void processRequest_staticInstructionProvider_bypassesStateInjection() {
+    Session session = createSession();
+    session.state().put("name", "TestBot");
+    String staticText = "Static with {name} placeholder that should NOT be resolved.";
+    Instruction staticProvider = new Instruction.Provider(ctx -> Single.just(staticText));
+
+    LlmAgent agent = LlmAgent.builder().name("agent").staticInstruction(staticProvider).build();
+    InvocationContext context = createContext(agent, session);
+
+    RequestProcessor.RequestProcessingResult result =
+        instructionsProcessor.processRequest(context, initialRequest).blockingGet();
+
+    assertThat(result.updatedRequest().getSystemInstructions()).containsExactly(staticText);
+  }
 }

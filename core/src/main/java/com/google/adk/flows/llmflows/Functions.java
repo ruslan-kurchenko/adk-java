@@ -591,7 +591,11 @@ public final class Functions {
         .doOnSubscribe(
             d ->
                 Tracing.traceToolCall(
-                    tool.name(), tool.description(), tool.getClass().getSimpleName(), args))
+                    toolContext.invocationContext(),
+                    tool.name(),
+                    tool.description(),
+                    tool.getClass().getSimpleName(),
+                    args))
         .doOnError(t -> Span.current().recordException(t))
         .compose(Tracing.trace("tool_call [" + tool.name() + "]", parentContext))
         .onErrorResumeNext(

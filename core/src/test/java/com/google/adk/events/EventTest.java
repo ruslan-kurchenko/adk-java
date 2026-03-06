@@ -18,6 +18,7 @@ package com.google.adk.events;
 
 import static com.google.common.truth.Truth.assertThat;
 
+import com.google.adk.models.cache.CacheMetadata;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
@@ -191,65 +192,93 @@ public final class EventTest {
   }
 
   @Test
-  public void finalResponse_returnsTrueIfNoToolCalls() {
+  public void event_withCacheMetadata_storesAndRetrievesCorrectly() {
+    CacheMetadata cacheMetadata =
+        CacheMetadata.builder()
+            .cacheName("cachedContents/test123")
+            .expireTime(System.currentTimeMillis() / 1000 + 1800)
+            .fingerprint("abc123def456")
+            .contentsCount(10)
+            .createdAt(System.currentTimeMillis() / 1000)
+            .build();
+
     Event event =
         Event.builder()
-            .id("e1")
-            .invocationId("i1")
+            .id("event_id")
+            .invocationId("invocation_id")
             .author("agent")
-            .content(Content.fromParts(Part.fromText("hello")))
+            .cacheMetadata(cacheMetadata)
             .build();
-    assertThat(event.finalResponse()).isTrue();
+
+    assertThat(event.cacheMetadata()).hasValue(cacheMetadata);
   }
 
   @Test
-  public void finalResponse_returnsFalseIfToolCalls() {
+  public void event_withoutCacheMetadata_returnsEmpty() {
     Event event =
-        Event.builder()
-            .id("e1")
-            .invocationId("i1")
-            .author("agent")
-            .content(Content.fromParts(Part.fromFunctionCall("tool", ImmutableMap.of("k", "v"))))
-            .build();
-    assertThat(event.finalResponse()).isFalse();
+        Event.builder().id("event_id").invocationId("invocation_id").author("agent").build();
+
+    assertThat(event.cacheMetadata()).isEmpty();
   }
 
   @Test
-  public void finalResponse_isTrueForEventWithTextContent() {
+  public void event_cacheMetadata_serializesToJson() {
+    CacheMetadata cacheMetadata =
+        CacheMetadata.builder().fingerprint("fingerprint123").contentsCount(7).build();
+
     Event event =
         Event.builder()
-            .id("e1")
-            .invocationId("i1")
+            .id("event_id")
+            .invocationId("invocation_id")
             .author("agent")
-            .content(Content.fromParts(Part.fromText("hello")))
-            .longRunningToolIds(ImmutableSet.of("tool1"))
+            .cacheMetadata(cacheMetadata)
             .build();
-    assertThat(event.finalResponse()).isTrue();
+
+    String json = event.toJson();
+
+    assertThat(json).contains("\"cacheMetadata\":");
+    assertThat(json).contains("\"fingerprint\":\"fingerprint123\"");
+    assertThat(json).contains("\"contents_count\":7");
   }
 
   @Test
-  public void finalResponse_isFalseForEventWithToolCallAndLongRunningToolId() {
-    Event event =
-        Event.builder()
-            .id("e1")
-            .invocationId("i1")
-            .author("agent")
-            .content(Content.fromParts(Part.fromFunctionCall("tool", ImmutableMap.of("k", "v"))))
-            .longRunningToolIds(ImmutableSet.of("tool1"))
-            .build();
-    assertThat(event.finalResponse()).isFalse();
+  public void event_cacheMetadata_deserializesFromJson() {
+    String json =
+        "{"
+            + "\"id\":\"event_id\","
+            + "\"invocationId\":\"invocation_id\","
+            + "\"author\":\"agent\","
+            + "\"cacheMetadata\":{"
+            + "\"fingerprint\":\"test_fingerprint\","
+            + "\"contents_count\":15"
+            + "},"
+            + "\"actions\":{},"
+            + "\"timestamp\":1234567890"
+            + "}";
+
+    Event event = Event.fromJson(json);
+
+    assertThat(event.cacheMetadata()).isPresent();
+    assertThat(event.cacheMetadata().get().fingerprint()).isEqualTo("test_fingerprint");
+    assertThat(event.cacheMetadata().get().contentsCount()).isEqualTo(15);
   }
 
   @Test
-  public void finalResponse_returnsTrueIfSkipSummarization() {
-    Event event =
+  public void event_toBuilder_preservesCacheMetadata() {
+    CacheMetadata cacheMetadata =
+        CacheMetadata.builder().fingerprint("preserved123").contentsCount(5).build();
+
+    Event original =
         Event.builder()
-            .id("e1")
-            .invocationId("i1")
+            .id("original_id")
+            .invocationId("invocation_id")
             .author("agent")
-            .content(Content.fromParts(Part.fromFunctionCall("tool", ImmutableMap.of("k", "v"))))
-            .actions(EventActions.builder().skipSummarization(true).build())
+            .cacheMetadata(cacheMetadata)
             .build();
-    assertThat(event.finalResponse()).isTrue();
+
+    Event rebuilt = original.toBuilder().id("new_id").build();
+
+    assertThat(rebuilt.cacheMetadata()).hasValue(cacheMetadata);
+    assertThat(rebuilt.id()).isEqualTo("new_id");
   }
 }

@@ -17,12 +17,13 @@
 package com.google.adk.agents;
 
 import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.assertThrows;
 
 import com.google.common.collect.ImmutableList;
 import com.google.genai.types.AudioTranscriptionConfig;
 import com.google.genai.types.Modality;
 import com.google.genai.types.SpeechConfig;
+import java.time.Duration;
+import java.util.Optional;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.JUnit4;
@@ -66,6 +67,56 @@ public final class RunConfigTest {
     assertThat(runConfig.outputAudioTranscription()).isNull();
     assertThat(runConfig.inputAudioTranscription()).isNull();
     assertThat(runConfig.maxLlmCalls()).isEqualTo(500);
+    assertThat(runConfig.contextCacheConfig()).isEmpty();
+  }
+
+  @Test
+  public void contextCacheConfig_setWithOptional_retrievesCorrectly() {
+    ContextCacheConfig cacheConfig = new ContextCacheConfig(10, Duration.ofSeconds(3600), 1000);
+
+    RunConfig runConfig =
+        RunConfig.builder().setContextCacheConfig(Optional.of(cacheConfig)).build();
+
+    assertThat(runConfig.contextCacheConfig()).hasValue(cacheConfig);
+  }
+
+  @Test
+  public void contextCacheConfig_setWithNullable_retrievesCorrectly() {
+    ContextCacheConfig cacheConfig = new ContextCacheConfig(10, Duration.ofSeconds(1800), 0);
+
+    RunConfig runConfig = RunConfig.builder().setContextCacheConfig(cacheConfig).build();
+
+    assertThat(runConfig.contextCacheConfig()).hasValue(cacheConfig);
+  }
+
+  @Test
+  public void contextCacheConfig_setToNull_setsExplicitDisableOverride() {
+    RunConfig runConfig =
+        RunConfig.builder().setContextCacheConfig((ContextCacheConfig) null).build();
+
+    assertThat(runConfig.contextCacheConfig()).isPresent();
+    assertThat(runConfig.contextCacheConfig().get().maxInvocations()).isEqualTo(0);
+    assertThat(runConfig.contextCacheConfig().get().ttl()).isEqualTo(Duration.ZERO);
+  }
+
+  @Test
+  public void contextCacheConfig_notSet_returnsEmpty() {
+    RunConfig runConfig = RunConfig.builder().build();
+
+    assertThat(runConfig.contextCacheConfig()).isEmpty();
+  }
+
+  @Test
+  public void builder_fromExistingRunConfig_preservesContextCacheConfig() {
+    ContextCacheConfig cacheConfig = new ContextCacheConfig(10, Duration.ofSeconds(7200), 0);
+
+    RunConfig original =
+        RunConfig.builder().setContextCacheConfig(cacheConfig).setMaxLlmCalls(100).build();
+
+    RunConfig rebuilt = RunConfig.builder(original).setMaxLlmCalls(200).build();
+
+    assertThat(rebuilt.contextCacheConfig()).hasValue(cacheConfig);
+    assertThat(rebuilt.maxLlmCalls()).isEqualTo(200);
   }
 
   @Test
@@ -114,12 +165,5 @@ public final class RunConfigTest {
     assertThat(runConfig.outputAudioTranscription()).isNull();
     assertThat(runConfig.streamingMode()).isEqualTo(RunConfig.StreamingMode.BIDI);
     assertThat(runConfig.responseModalities()).containsExactly(new Modality(Modality.Known.AUDIO));
-  }
-
-  @Test
-  public void testMaxLlmCalls_integerMaxValue_throwsIllegalArgumentException() {
-    assertThrows(
-        IllegalArgumentException.class,
-        () -> RunConfig.builder().setMaxLlmCalls(Integer.MAX_VALUE).build());
   }
 }

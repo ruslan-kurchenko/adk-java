@@ -23,11 +23,12 @@ import java.util.Optional;
 public class AutoFlow extends SingleFlow {
 
   /** Adds {@link AgentTransfer} to base request processors. */
-  private static final ImmutableList<RequestProcessor> REQUEST_PROCESSORS =
-      ImmutableList.<RequestProcessor>builder()
-          .addAll(SingleFlow.REQUEST_PROCESSORS)
-          .add(new AgentTransfer())
-          .build();
+  protected static ImmutableList<RequestProcessor> createRequestProcessors() {
+    return ImmutableList.<RequestProcessor>builder()
+        .addAll(SingleFlow.createRequestProcessors())
+        .add(new AgentTransfer())
+        .build();
+  }
 
   /** Only base response processors. */
   private static final ImmutableList<ResponseProcessor> RESPONSE_PROCESSORS =
@@ -38,6 +39,6 @@ public class AutoFlow extends SingleFlow {
   }
 
   public AutoFlow(Optional<Integer> maxSteps) {
-    super(REQUEST_PROCESSORS, RESPONSE_PROCESSORS, maxSteps);
+    super(createRequestProcessors(), RESPONSE_PROCESSORS, maxSteps);
   }
 }

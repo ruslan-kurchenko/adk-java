@@ -26,6 +26,8 @@ import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 import com.google.adk.JsonBaseModel;
+import com.google.adk.agents.ContextCacheConfig;
+import com.google.adk.models.cache.CacheMetadata;
 import com.google.adk.tools.BaseTool;
 import com.google.auto.value.AutoValue;
 import com.google.common.collect.ImmutableList;
@@ -87,6 +89,18 @@ public abstract class LlmRequest extends JsonBaseModel {
    */
   @JsonIgnore
   public abstract Map<String, BaseTool> tools();
+
+  /** Returns the context cache configuration for this request. */
+  @JsonProperty("cacheConfig")
+  public abstract Optional<ContextCacheConfig> cacheConfig();
+
+  /** Returns the cache metadata for this request. */
+  @JsonProperty("cacheMetadata")
+  public abstract Optional<CacheMetadata> cacheMetadata();
+
+  /** Returns the token count of cacheable contents from previous request. */
+  @JsonProperty("cacheableContentsTokenCount")
+  public abstract Optional<Integer> cacheableContentsTokenCount();
 
   /** returns the first system instruction text from the request if present. */
   @JsonIgnore
@@ -154,6 +168,18 @@ public abstract class LlmRequest extends JsonBaseModel {
     abstract Builder tools(Map<String, BaseTool> tools);
 
     abstract Map<String, BaseTool> tools();
+
+    @CanIgnoreReturnValue
+    @JsonProperty("cacheConfig")
+    public abstract Builder cacheConfig(ContextCacheConfig cacheConfig);
+
+    @CanIgnoreReturnValue
+    @JsonProperty("cacheMetadata")
+    public abstract Builder cacheMetadata(CacheMetadata cacheMetadata);
+
+    @CanIgnoreReturnValue
+    @JsonProperty("cacheableContentsTokenCount")
+    public abstract Builder cacheableContentsTokenCount(Integer tokenCount);
 
     @CanIgnoreReturnValue
     public final Builder appendInstructions(List<String> instructions) {

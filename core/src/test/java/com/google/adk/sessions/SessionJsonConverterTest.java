@@ -10,6 +10,7 @@ import com.google.adk.JsonBaseModel;
 import com.google.adk.events.Event;
 import com.google.adk.events.EventActions;
 import com.google.adk.events.ToolConfirmation;
+import com.google.adk.models.cache.CacheMetadata;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
@@ -329,6 +330,76 @@ public final class SessionJsonConverterTest {
     assertThat(event.partial().get()).isTrue();
     assertThat(event.turnComplete().get()).isFalse();
     assertThat(event.interrupted().get()).isFalse();
+  }
+
+  @Test
+  public void convertEventToJson_withCacheMetadata_includesMetadata()
+      throws JsonProcessingException {
+    CacheMetadata cacheMetadata =
+        CacheMetadata.builder()
+            .cacheName("cachedContents/test-cache")
+            .expireTime(1_700_000_100L)
+            .fingerprint("fingerprint-abc")
+            .contentsCount(3)
+            .createdAt(1_700_000_000L)
+            .invocationsUsed(2)
+            .build();
+
+    Event event =
+        Event.builder()
+            .author("user")
+            .invocationId("inv-123")
+            .timestamp(Instant.parse("2023-01-01T00:00:00Z").toEpochMilli())
+            .cacheMetadata(cacheMetadata)
+            .build();
+
+    String json = SessionJsonConverter.convertEventToJson(event);
+    JsonNode cacheMetadataJson =
+        objectMapper.readTree(json).get("eventMetadata").get("cacheMetadata");
+
+    assertThat(cacheMetadataJson.get("cache_name").asText()).isEqualTo("cachedContents/test-cache");
+    assertThat(cacheMetadataJson.get("expire_time").asLong()).isEqualTo(1_700_000_100L);
+    assertThat(cacheMetadataJson.get("fingerprint").asText()).isEqualTo("fingerprint-abc");
+    assertThat(cacheMetadataJson.get("contents_count").asInt()).isEqualTo(3);
+    assertThat(cacheMetadataJson.get("created_at").asLong()).isEqualTo(1_700_000_000L);
+    assertThat(cacheMetadataJson.get("invocations_used").asInt()).isEqualTo(2);
+  }
+
+  @Test
+  public void fromApiEvent_withCacheMetadata_setsCacheMetadata() {
+    Map<String, Object> apiEvent = new HashMap<>();
+    apiEvent.put("name", "sessions/123/events/456");
+    apiEvent.put("invocationId", "inv-123");
+    apiEvent.put("author", "model");
+    apiEvent.put("timestamp", "2023-01-01T00:00:00Z");
+    apiEvent.put(
+        "eventMetadata",
+        ImmutableMap.of(
+            "cacheMetadata",
+            ImmutableMap.of(
+                "cache_name",
+                "cachedContents/test-cache",
+                "expire_time",
+                1_700_000_100L,
+                "fingerprint",
+                "fingerprint-abc",
+                "contents_count",
+                3,
+                "created_at",
+                1_700_000_000L,
+                "invocations_used",
+                2)));
+
+    Event event = SessionJsonConverter.fromApiEvent(apiEvent);
+
+    assertThat(event.cacheMetadata()).isPresent();
+    CacheMetadata cacheMetadata = event.cacheMetadata().get();
+    assertThat(cacheMetadata.cacheName()).hasValue("cachedContents/test-cache");
+    assertThat(cacheMetadata.expireTime()).hasValue(1_700_000_100L);
+    assertThat(cacheMetadata.fingerprint()).isEqualTo("fingerprint-abc");
+    assertThat(cacheMetadata.contentsCount()).isEqualTo(3);
+    assertThat(cacheMetadata.createdAt()).hasValue(1_700_000_000L);
+    assertThat(cacheMetadata.invocationsUsed()).hasValue(2);
   }
 
   @Test

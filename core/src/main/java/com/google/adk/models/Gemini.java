@@ -19,6 +19,8 @@ package com.google.adk.models;
 import static com.google.common.base.StandardSystemProperty.JAVA_VERSION;
 
 import com.google.adk.Version;
+import com.google.adk.models.cache.CacheMetadata;
+import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.errorprone.annotations.CanIgnoreReturnValue;
 import com.google.genai.Client;
@@ -37,6 +39,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
+import javax.annotation.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -117,6 +120,10 @@ public class Gemini extends BaseLlm {
    */
   public static Builder builder() {
     return new Builder();
+  }
+
+  public Client apiClient() {
+    return apiClient;
   }
 
   /** Builder for {@link Gemini}. */
@@ -211,6 +218,28 @@ public class Gemini extends BaseLlm {
         GeminiUtil.prepareGenenerateContentRequest(
             llmRequest, !apiClient.vertexAI(), /* stripThoughts= */ false);
     GenerateContentConfig config = llmRequest.config().orElse(null);
+    config = injectCachedContentId(llmRequest, config);
+
+    if (llmRequest.cacheMetadata().isPresent()
+        && llmRequest.cacheMetadata().get().isActiveCache()) {
+      int cachedCount = llmRequest.cacheMetadata().get().contentsCount();
+      List<Content> allContents = llmRequest.contents();
+      if (cachedCount > 0 && allContents.size() > cachedCount) {
+        List<Content> uncachedContents = allContents.subList(cachedCount, allContents.size());
+        llmRequest = llmRequest.toBuilder().contents(uncachedContents).build();
+      } else if (cachedCount > 0 && allContents.size() == cachedCount) {
+        llmRequest = llmRequest.toBuilder().contents(ImmutableList.of()).build();
+      } else if (allContents.size() < cachedCount) {
+        logger.warn(
+            "Request has fewer contents ({}) than cached ({}), "
+                + "dropping cache and sending full request to avoid context duplication",
+            allContents.size(),
+            cachedCount);
+        llmRequest = clearCacheMetadata(llmRequest);
+        config = llmRequest.config().orElse(null);
+      }
+    }
+
     String effectiveModelName = llmRequest.model().orElse(model());
 
     logger.trace("Request Contents: {}", llmRequest.contents());
@@ -226,21 +255,7 @@ public class Gemini extends BaseLlm {
               () ->
                   processRawResponses(
                       Flowable.fromFuture(streamFuture).flatMapIterable(iterable -> iterable)))
-          .filter(
-              llmResponse ->
-                  llmResponse
-                      .content()
-                      .flatMap(Content::parts)
-                      .map(
-                          parts ->
-                              !parts.isEmpty()
-                                  && parts.stream()
-                                      .anyMatch(
-                                          p ->
-                                              p.functionCall().isPresent()
-                                                  || p.functionResponse().isPresent()
-                                                  || p.text().map(t -> !t.isBlank()).orElse(false)))
-                      .orElse(false));
+          .filter(Gemini::shouldEmitStreamingResponse);
     } else {
       logger.debug("Sending generateContent request to model {}", effectiveModelName);
       return Flowable.fromFuture(
@@ -327,6 +342,43 @@ public class Gemini extends BaseLlm {
                 }));
   }
 
+  static boolean shouldEmitStreamingResponse(LlmResponse llmResponse) {
+    boolean hasMeaningfulContent =
+        llmResponse
+            .content()
+            .flatMap(Content::parts)
+            .map(
+                parts ->
+                    !parts.isEmpty()
+                        && parts.stream()
+                            .anyMatch(
+                                p ->
+                                    p.functionCall().isPresent()
+                                        || p.functionResponse().isPresent()
+                                        || p.text().map(t -> !t.isBlank()).orElse(false)))
+            .orElse(false);
+
+    boolean hasCachedTokenUsageEvidence =
+        llmResponse.usageMetadata().flatMap(usage -> usage.cachedContentTokenCount()).isPresent();
+
+    return hasMeaningfulContent || hasCachedTokenUsageEvidence;
+  }
+
+  private static LlmRequest clearCacheMetadata(LlmRequest llmRequest) {
+    LlmRequest.Builder builder =
+        LlmRequest.builder()
+            .contents(llmRequest.contents())
+            .liveConnectConfig(llmRequest.liveConnectConfig());
+
+    llmRequest.model().ifPresent(builder::model);
+    llmRequest.config().ifPresent(builder::config);
+    builder.tools(llmRequest.tools());
+    llmRequest.cacheConfig().ifPresent(builder::cacheConfig);
+    llmRequest.cacheableContentsTokenCount().ifPresent(builder::cacheableContentsTokenCount);
+
+    return builder.build();
+  }
+
   private static LlmResponse responseFromText(String accumulatedText) {
     return LlmResponse.builder()
         .content(Content.builder().role("model").parts(Part.fromText(accumulatedText)).build())
@@ -343,6 +395,57 @@ public class Gemini extends BaseLlm {
         .build();
   }
 
+  private GenerateContentConfig injectCachedContentId(
+      LlmRequest llmRequest, GenerateContentConfig config) {
+    return llmRequest
+        .cacheMetadata()
+        .filter(CacheMetadata::isActiveCache)
+        .flatMap(CacheMetadata::cacheName)
+        .map(cacheName -> buildConfigWithCachedContent(cacheName, config))
+        .orElse(config);
+  }
+
+  private GenerateContentConfig buildConfigWithCachedContent(
+      String cacheName, @Nullable GenerateContentConfig originalConfig) {
+    GenerateContentConfig.Builder builder = GenerateContentConfig.builder();
+    builder.cachedContent(cacheName);
+    if (originalConfig != null) {
+      copyNonCachedFields(originalConfig, builder);
+    }
+    return builder.build();
+  }
+
+  /**
+   * Copies only generation-parameter fields from the original config, intentionally excluding
+   * {@code systemInstruction}, {@code tools}, and {@code toolConfig}. When {@code cachedContent} is
+   * set on a request, the Gemini API rejects these fields with a 400 error because they are already
+   * embedded in the cached content itself. The {@code Instructions} processor runs before {@code
+   * ContextCacheProcessor} in {@code SingleFlow}, so dynamic instructions are already included in
+   * the cache at creation time.
+   */
+  private void copyNonCachedFields(
+      GenerateContentConfig original, GenerateContentConfig.Builder builder) {
+    original.temperature().ifPresent(builder::temperature);
+    original.topP().ifPresent(builder::topP);
+    original.topK().ifPresent(builder::topK);
+    original.maxOutputTokens().ifPresent(builder::maxOutputTokens);
+    original.candidateCount().ifPresent(builder::candidateCount);
+    original.stopSequences().ifPresent(builder::stopSequences);
+    original.presencePenalty().ifPresent(builder::presencePenalty);
+    original.frequencyPenalty().ifPresent(builder::frequencyPenalty);
+    original.seed().ifPresent(builder::seed);
+    original.responseMimeType().ifPresent(builder::responseMimeType);
+    original.responseSchema().ifPresent(builder::responseSchema);
+    original.responseModalities().ifPresent(builder::responseModalities);
+    original.safetySettings().ifPresent(builder::safetySettings);
+    original.routingConfig().ifPresent(builder::routingConfig);
+    original.labels().ifPresent(builder::labels);
+    original.logprobs().ifPresent(builder::logprobs);
+    original.responseLogprobs().ifPresent(builder::responseLogprobs);
+    original.mediaResolution().ifPresent(builder::mediaResolution);
+    original.speechConfig().ifPresent(builder::speechConfig);
+  }
+
   @Override
   public BaseLlmConnection connect(LlmRequest llmRequest) {
     if (!apiClient.vertexAI()) {
@@ -350,6 +453,14 @@ public class Gemini extends BaseLlm {
     }
     logger.debug("Establishing Gemini connection.");
     LiveConnectConfig liveConnectConfig = llmRequest.liveConnectConfig();
+
+    if (llmRequest.cacheMetadata().isPresent()
+        && llmRequest.cacheMetadata().get().isActiveCache()) {
+      logger.warn(
+          "Context caching is not yet supported for Live mode (runLive). "
+              + "Cache will be ignored for this connection. Use runAsync for cached requests.");
+    }
+
     String effectiveModelName = llmRequest.model().orElse(model());
 
     logger.debug("Connecting to model {}", effectiveModelName);

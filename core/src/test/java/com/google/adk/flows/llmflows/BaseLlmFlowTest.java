@@ -28,11 +28,13 @@ import static com.google.common.truth.Truth.assertThat;
 
 import com.google.adk.agents.Callbacks;
 import com.google.adk.agents.InvocationContext;
+import com.google.adk.agents.RunConfig;
 import com.google.adk.events.Event;
 import com.google.adk.flows.llmflows.RequestProcessor.RequestProcessingResult;
 import com.google.adk.flows.llmflows.ResponseProcessor.ResponseProcessingResult;
 import com.google.adk.models.LlmRequest;
 import com.google.adk.models.LlmResponse;
+import com.google.adk.models.cache.CacheMetadata;
 import com.google.adk.testing.TestLlm;
 import com.google.adk.tools.BaseTool;
 import com.google.adk.tools.ToolContext;
@@ -41,8 +43,11 @@ import com.google.common.collect.ImmutableMap;
 import com.google.genai.types.Content;
 import com.google.genai.types.FinishReason;
 import com.google.genai.types.FunctionDeclaration;
+import com.google.genai.types.GenerateContentConfig;
 import com.google.genai.types.GenerateContentResponseUsageMetadata;
 import com.google.genai.types.Part;
+import com.google.genai.types.Tool;
+import io.reactivex.rxjava3.core.Completable;
 import io.reactivex.rxjava3.core.Flowable;
 import io.reactivex.rxjava3.core.Maybe;
 import io.reactivex.rxjava3.core.Single;
@@ -335,6 +340,119 @@ public final class BaseLlmFlowTest {
   }
 
   @Test
+  public void run_cachePathWithPrepopulatedTools_skipsSecondToolPreprocessing() {
+    Content content = Content.fromParts(Part.fromText("LLM response"));
+    TestLlm testLlm = createTestLlm(createLlmResponse(content));
+
+    AtomicInteger toolProcessCalls = new AtomicInteger();
+    BaseTool testTool =
+        new TestTool("my_function", ImmutableMap.of()) {
+          @Override
+          public Completable processLlmRequest(
+              LlmRequest.Builder llmRequestBuilder, ToolContext toolContext) {
+            toolProcessCalls.incrementAndGet();
+            return super.processLlmRequest(llmRequestBuilder, toolContext);
+          }
+        };
+
+    RequestProcessor cachePrepopulationProcessor =
+        (context, request) -> {
+          LlmRequest.Builder builder =
+              request.toBuilder()
+                  .cacheMetadata(
+                      CacheMetadata.builder()
+                          .fingerprint("cache-fingerprint")
+                          .contentsCount(0)
+                          .build());
+          return testTool
+              .processLlmRequest(builder, ToolContext.builder(context).build())
+              .andThen(
+                  Single.just(RequestProcessingResult.create(builder.build(), ImmutableList.of())));
+        };
+
+    InvocationContext invocationContext =
+        createInvocationContext(
+            createTestAgentBuilder(testLlm).tools(ImmutableList.of(testTool)).build());
+    BaseLlmFlow baseLlmFlow =
+        createBaseLlmFlow(
+            ImmutableList.of(cachePrepopulationProcessor),
+            /* responseProcessors= */ ImmutableList.of());
+
+    List<Event> unused = baseLlmFlow.run(invocationContext).toList().blockingGet();
+
+    assertThat(toolProcessCalls.get()).isEqualTo(1);
+    assertThat(testLlm.getLastRequest().tools()).containsKey("my_function");
+  }
+
+  @Test
+  public void run_cachePathWithConfigToolsButNoBoundTools_skipsSecondToolPreprocessing() {
+    Content content = Content.fromParts(Part.fromText("LLM response"));
+    TestLlm testLlm = createTestLlm(createLlmResponse(content));
+
+    AtomicInteger toolProcessCalls = new AtomicInteger();
+    BaseTool testTool =
+        new TestTool("my_function", ImmutableMap.of()) {
+          @Override
+          public Completable processLlmRequest(
+              LlmRequest.Builder llmRequestBuilder, ToolContext toolContext) {
+            toolProcessCalls.incrementAndGet();
+            return super.processLlmRequest(llmRequestBuilder, toolContext);
+          }
+        };
+
+    RequestProcessor cachePrepopulationProcessor =
+        (unusedContext, request) ->
+            Single.just(
+                RequestProcessingResult.create(
+                    request.toBuilder()
+                        .cacheMetadata(
+                            CacheMetadata.builder()
+                                .fingerprint("cache-fingerprint")
+                                .contentsCount(0)
+                                .build())
+                        .config(
+                            GenerateContentConfig.builder()
+                                .tools(
+                                    Tool.builder()
+                                        .functionDeclarations(
+                                            ImmutableList.of(
+                                                FunctionDeclaration.builder()
+                                                    .name("preexisting_fn")
+                                                    .build()))
+                                        .build())
+                                .build())
+                        .build(),
+                    ImmutableList.of()));
+
+    InvocationContext invocationContext =
+        createInvocationContext(
+            createTestAgentBuilder(testLlm).tools(ImmutableList.of(testTool)).build());
+    BaseLlmFlow baseLlmFlow =
+        createBaseLlmFlow(
+            ImmutableList.of(cachePrepopulationProcessor),
+            /* responseProcessors= */ ImmutableList.of());
+
+    List<Event> unused = baseLlmFlow.run(invocationContext).toList().blockingGet();
+
+    assertThat(toolProcessCalls.get()).isEqualTo(0);
+    assertThat(testLlm.getLastRequest().tools()).doesNotContainKey("my_function");
+
+    GenerateContentConfig requestConfig = testLlm.getLastRequest().config().orElseThrow();
+    assertThat(requestConfig.tools()).isPresent();
+    assertThat(requestConfig.tools().orElseThrow()).hasSize(1);
+    assertThat(
+            requestConfig
+                .tools()
+                .orElseThrow()
+                .get(0)
+                .functionDeclarations()
+                .orElseThrow()
+                .get(0)
+                .name())
+        .hasValue("preexisting_fn");
+  }
+
+  @Test
   public void run_requestProcessorsEmitEventsDirectly() {
     Event eventFromProcessor1 =
         Event.builder()
@@ -603,5 +721,301 @@ public final class BaseLlmFlowTest {
     assertThat(event.usageMetadata()).hasValue(usageMetadata);
     assertThat(event.author()).isEqualTo(invocationContext.agent().name());
     assertThat(event.invocationId()).isEqualTo(invocationContext.invocationId());
+  }
+
+  @Test
+  public void postprocess_cachedTokensZero_doesNotPropagateRequestCacheMetadata() {
+    CacheMetadata requestCacheMetadata =
+        CacheMetadata.builder()
+            .cacheName("cachedContents/test")
+            .expireTime(System.currentTimeMillis() / 1000 + 300)
+            .fingerprint("fingerprint")
+            .contentsCount(2)
+            .build();
+
+    GenerateContentResponseUsageMetadata usageMetadata =
+        createGenerateContentResponseUsageMetadata().cachedContentTokenCount(0).build();
+    LlmResponse llmResponse = LlmResponse.builder().usageMetadata(usageMetadata).build();
+    InvocationContext invocationContext =
+        createInvocationContext(createTestAgent(createTestLlm(llmResponse)));
+    BaseLlmFlow baseLlmFlow = createBaseLlmFlowWithoutProcessors();
+    Event baseEvent =
+        Event.builder()
+            .invocationId(invocationContext.invocationId())
+            .author(invocationContext.agent().name())
+            .build();
+
+    List<Event> events =
+        baseLlmFlow
+            .postprocess(
+                invocationContext,
+                baseEvent,
+                LlmRequest.builder().cacheMetadata(requestCacheMetadata).build(),
+                llmResponse)
+            .toList()
+            .blockingGet();
+
+    Event event = getOnlyElement(events);
+    assertThat(event.cacheMetadata()).isEmpty();
+  }
+
+  @Test
+  public void postprocess_activeCache_missingUsageMetadata_doesNotPropagateRequestCacheMetadata() {
+    CacheMetadata requestCacheMetadata =
+        CacheMetadata.builder()
+            .cacheName("cachedContents/test")
+            .expireTime(System.currentTimeMillis() / 1000 + 300)
+            .fingerprint("fingerprint")
+            .contentsCount(2)
+            .build();
+
+    LlmResponse llmResponse =
+        LlmResponse.builder().content(Content.fromParts(Part.fromText("response"))).build();
+    InvocationContext invocationContext =
+        createInvocationContext(createTestAgent(createTestLlm(llmResponse)));
+    BaseLlmFlow baseLlmFlow = createBaseLlmFlowWithoutProcessors();
+    Event baseEvent =
+        Event.builder()
+            .invocationId(invocationContext.invocationId())
+            .author(invocationContext.agent().name())
+            .build();
+
+    List<Event> events =
+        baseLlmFlow
+            .postprocess(
+                invocationContext,
+                baseEvent,
+                LlmRequest.builder().cacheMetadata(requestCacheMetadata).build(),
+                llmResponse)
+            .toList()
+            .blockingGet();
+
+    Event event = getOnlyElement(events);
+    assertThat(event.cacheMetadata()).isEmpty();
+  }
+
+  @Test
+  public void
+      postprocess_activeCache_missingUsageMetadata_sseMode_doesNotPropagateRequestCacheMetadata() {
+    CacheMetadata requestCacheMetadata =
+        CacheMetadata.builder()
+            .cacheName("cachedContents/test")
+            .expireTime(System.currentTimeMillis() / 1000 + 300)
+            .fingerprint("fingerprint")
+            .contentsCount(2)
+            .build();
+
+    LlmResponse llmResponse =
+        LlmResponse.builder().content(Content.fromParts(Part.fromText("response"))).build();
+    InvocationContext invocationContext =
+        createInvocationContext(
+            createTestAgent(createTestLlm(llmResponse)),
+            RunConfig.builder().setStreamingMode(RunConfig.StreamingMode.SSE).build());
+    BaseLlmFlow baseLlmFlow = createBaseLlmFlowWithoutProcessors();
+    Event baseEvent =
+        Event.builder()
+            .invocationId(invocationContext.invocationId())
+            .author(invocationContext.agent().name())
+            .build();
+
+    List<Event> events =
+        baseLlmFlow
+            .postprocess(
+                invocationContext,
+                baseEvent,
+                LlmRequest.builder().cacheMetadata(requestCacheMetadata).build(),
+                llmResponse)
+            .toList()
+            .blockingGet();
+
+    Event event = getOnlyElement(events);
+    assertThat(event.cacheMetadata()).isEmpty();
+  }
+
+  @Test
+  public void
+      postprocess_activeCache_sseMode_cachedTokensPositive_propagatesRequestCacheMetadata() {
+    CacheMetadata requestCacheMetadata =
+        CacheMetadata.builder()
+            .cacheName("cachedContents/test")
+            .expireTime(System.currentTimeMillis() / 1000 + 300)
+            .fingerprint("fingerprint")
+            .contentsCount(2)
+            .build();
+
+    GenerateContentResponseUsageMetadata usageMetadata =
+        createGenerateContentResponseUsageMetadata().cachedContentTokenCount(7).build();
+    LlmResponse llmResponse =
+        LlmResponse.builder()
+            .content(Content.fromParts(Part.fromText("response")))
+            .usageMetadata(usageMetadata)
+            .build();
+    InvocationContext invocationContext =
+        createInvocationContext(
+            createTestAgent(createTestLlm(llmResponse)),
+            RunConfig.builder().setStreamingMode(RunConfig.StreamingMode.SSE).build());
+    BaseLlmFlow baseLlmFlow = createBaseLlmFlowWithoutProcessors();
+    Event baseEvent =
+        Event.builder()
+            .invocationId(invocationContext.invocationId())
+            .author(invocationContext.agent().name())
+            .build();
+
+    List<Event> events =
+        baseLlmFlow
+            .postprocess(
+                invocationContext,
+                baseEvent,
+                LlmRequest.builder().cacheMetadata(requestCacheMetadata).build(),
+                llmResponse)
+            .toList()
+            .blockingGet();
+
+    Event event = getOnlyElement(events);
+    assertThat(event.cacheMetadata()).hasValue(requestCacheMetadata);
+  }
+
+  @Test
+  public void
+      postprocess_activeCache_sseMode_cachedTokensZero_doesNotPropagateRequestCacheMetadata() {
+    CacheMetadata requestCacheMetadata =
+        CacheMetadata.builder()
+            .cacheName("cachedContents/test")
+            .expireTime(System.currentTimeMillis() / 1000 + 300)
+            .fingerprint("fingerprint")
+            .contentsCount(2)
+            .build();
+
+    GenerateContentResponseUsageMetadata usageMetadata =
+        createGenerateContentResponseUsageMetadata().cachedContentTokenCount(0).build();
+    LlmResponse llmResponse =
+        LlmResponse.builder()
+            .content(Content.fromParts(Part.fromText("response")))
+            .usageMetadata(usageMetadata)
+            .build();
+    InvocationContext invocationContext =
+        createInvocationContext(
+            createTestAgent(createTestLlm(llmResponse)),
+            RunConfig.builder().setStreamingMode(RunConfig.StreamingMode.SSE).build());
+    BaseLlmFlow baseLlmFlow = createBaseLlmFlowWithoutProcessors();
+    Event baseEvent =
+        Event.builder()
+            .invocationId(invocationContext.invocationId())
+            .author(invocationContext.agent().name())
+            .build();
+
+    List<Event> events =
+        baseLlmFlow
+            .postprocess(
+                invocationContext,
+                baseEvent,
+                LlmRequest.builder().cacheMetadata(requestCacheMetadata).build(),
+                llmResponse)
+            .toList()
+            .blockingGet();
+
+    Event event = getOnlyElement(events);
+    assertThat(event.cacheMetadata()).isEmpty();
+  }
+
+  @Test
+  public void
+      postprocess_activeCache_missingCachedTokenCount_doesNotPropagateRequestCacheMetadata() {
+    CacheMetadata requestCacheMetadata =
+        CacheMetadata.builder()
+            .cacheName("cachedContents/test")
+            .expireTime(System.currentTimeMillis() / 1000 + 300)
+            .fingerprint("fingerprint")
+            .contentsCount(2)
+            .build();
+
+    GenerateContentResponseUsageMetadata usageMetadata =
+        GenerateContentResponseUsageMetadata.builder()
+            .promptTokenCount(10)
+            .candidatesTokenCount(20)
+            .build();
+    LlmResponse llmResponse = LlmResponse.builder().usageMetadata(usageMetadata).build();
+    InvocationContext invocationContext =
+        createInvocationContext(createTestAgent(createTestLlm(llmResponse)));
+    BaseLlmFlow baseLlmFlow = createBaseLlmFlowWithoutProcessors();
+    Event baseEvent =
+        Event.builder()
+            .invocationId(invocationContext.invocationId())
+            .author(invocationContext.agent().name())
+            .build();
+
+    List<Event> events =
+        baseLlmFlow
+            .postprocess(
+                invocationContext,
+                baseEvent,
+                LlmRequest.builder().cacheMetadata(requestCacheMetadata).build(),
+                llmResponse)
+            .toList()
+            .blockingGet();
+
+    Event event = getOnlyElement(events);
+    assertThat(event.cacheMetadata()).isEmpty();
+  }
+
+  @Test
+  public void postprocess_fingerprintOnlyMissingUsageMetadata_propagatesRequestCacheMetadata() {
+    CacheMetadata requestCacheMetadata =
+        CacheMetadata.builder().fingerprint("fingerprint-only").contentsCount(2).build();
+
+    LlmResponse llmResponse =
+        LlmResponse.builder().content(Content.fromParts(Part.fromText("response"))).build();
+    InvocationContext invocationContext =
+        createInvocationContext(createTestAgent(createTestLlm(llmResponse)));
+    BaseLlmFlow baseLlmFlow = createBaseLlmFlowWithoutProcessors();
+    Event baseEvent =
+        Event.builder()
+            .invocationId(invocationContext.invocationId())
+            .author(invocationContext.agent().name())
+            .build();
+
+    List<Event> events =
+        baseLlmFlow
+            .postprocess(
+                invocationContext,
+                baseEvent,
+                LlmRequest.builder().cacheMetadata(requestCacheMetadata).build(),
+                llmResponse)
+            .toList()
+            .blockingGet();
+
+    Event event = getOnlyElement(events);
+    assertThat(event.cacheMetadata()).hasValue(requestCacheMetadata);
+  }
+
+  @Test
+  public void postprocess_fingerprintOnlyCachedTokensZero_propagatesRequestCacheMetadata() {
+    CacheMetadata requestCacheMetadata =
+        CacheMetadata.builder().fingerprint("fingerprint-only").contentsCount(2).build();
+
+    GenerateContentResponseUsageMetadata usageMetadata =
+        createGenerateContentResponseUsageMetadata().cachedContentTokenCount(0).build();
+    LlmResponse llmResponse = LlmResponse.builder().usageMetadata(usageMetadata).build();
+    InvocationContext invocationContext =
+        createInvocationContext(createTestAgent(createTestLlm(llmResponse)));
+    BaseLlmFlow baseLlmFlow = createBaseLlmFlowWithoutProcessors();
+    Event baseEvent =
+        Event.builder()
+            .invocationId(invocationContext.invocationId())
+            .author(invocationContext.agent().name())
+            .build();
+
+    List<Event> events =
+        baseLlmFlow
+            .postprocess(
+                invocationContext,
+                baseEvent,
+                LlmRequest.builder().cacheMetadata(requestCacheMetadata).build(),
+                llmResponse)
+            .toList()
+            .blockingGet();
+
+    Event event = getOnlyElement(events);
+    assertThat(event.cacheMetadata()).hasValue(requestCacheMetadata);
   }
 }

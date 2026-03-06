@@ -22,6 +22,8 @@ import com.google.errorprone.annotations.CanIgnoreReturnValue;
 import com.google.genai.types.AudioTranscriptionConfig;
 import com.google.genai.types.Modality;
 import com.google.genai.types.SpeechConfig;
+import java.time.Duration;
+import java.util.Optional;
 import javax.annotation.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -30,6 +32,8 @@ import org.slf4j.LoggerFactory;
 @AutoValue
 public abstract class RunConfig {
   private static final Logger logger = LoggerFactory.getLogger(RunConfig.class);
+  private static final ContextCacheConfig EXPLICIT_DISABLE_CONTEXT_CACHE_CONFIG =
+      new ContextCacheConfig(0, Duration.ZERO, Integer.MAX_VALUE);
 
   /** Streaming mode for the runner. Required for BaseAgent.runLive() to work. */
   public enum StreamingMode {
@@ -72,6 +76,8 @@ public abstract class RunConfig {
 
   public abstract boolean autoCreateSession();
 
+  public abstract Optional<ContextCacheConfig> contextCacheConfig();
+
   public abstract Builder toBuilder();
 
   public static Builder builder() {
@@ -81,7 +87,8 @@ public abstract class RunConfig {
         .setStreamingMode(StreamingMode.NONE)
         .setToolExecutionMode(ToolExecutionMode.NONE)
         .setMaxLlmCalls(500)
-        .setAutoCreateSession(false);
+        .setAutoCreateSession(false)
+        .setContextCacheConfig(Optional.empty());
   }
 
   public static Builder builder(RunConfig runConfig) {
@@ -94,7 +101,8 @@ public abstract class RunConfig {
         .setSpeechConfig(runConfig.speechConfig())
         .setOutputAudioTranscription(runConfig.outputAudioTranscription())
         .setInputAudioTranscription(runConfig.inputAudioTranscription())
-        .setAutoCreateSession(runConfig.autoCreateSession());
+        .setAutoCreateSession(runConfig.autoCreateSession())
+        .setContextCacheConfig(runConfig.contextCacheConfig());
   }
 
   /** Builder for {@link RunConfig}. */
@@ -129,6 +137,17 @@ public abstract class RunConfig {
 
     @CanIgnoreReturnValue
     public abstract Builder setAutoCreateSession(boolean autoCreateSession);
+
+    @CanIgnoreReturnValue
+    public abstract Builder setContextCacheConfig(Optional<ContextCacheConfig> contextCacheConfig);
+
+    @CanIgnoreReturnValue
+    public Builder setContextCacheConfig(@Nullable ContextCacheConfig contextCacheConfig) {
+      return setContextCacheConfig(
+          contextCacheConfig == null
+              ? Optional.of(EXPLICIT_DISABLE_CONTEXT_CACHE_CONFIG)
+              : Optional.of(contextCacheConfig));
+    }
 
     abstract RunConfig autoBuild();
 

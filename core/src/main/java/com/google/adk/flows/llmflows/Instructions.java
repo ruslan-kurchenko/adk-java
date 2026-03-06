@@ -47,7 +47,12 @@ public final class Instructions implements RequestProcessor {
               builderSingle, context, rootAgent.canonicalGlobalInstruction(readonlyContext));
     }
 
-    // Process agent-specific instruction
+    // Process static instruction (stable, cacheable portion of system prompt)
+    builderSingle =
+        appendInstruction(
+            builderSingle, context, agent.canonicalStaticInstruction(readonlyContext));
+
+    // Process agent-specific dynamic instruction
     builderSingle =
         appendInstruction(builderSingle, context, agent.canonicalInstruction(readonlyContext));
 
